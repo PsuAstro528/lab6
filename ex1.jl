@@ -63,7 +63,7 @@ That said, near the end of this exercise we'll see an example of how a programmi
 md"""
 ## Hardware & Pluto server configuration
 Most modern workstations and even laptops have multiple processor cores.
-If you're using the Roar Collab portal and BYOE JupyterLab server, then you need to request that multiple processor cores be allocated to your session when you first submit the request for the BYOE JupyterLab server using the box labeled "Number of Cores", i.e. before you open this notebook and even before you start your Pluto session.
+If you're using the Lynx portal and BYOE JupyterLab server, then you need to request that multiple processor cores be allocated to your session when you first submit the request for the BYOE JupyterLab server using the box labeled "Number of Cores", i.e. before you open this notebook and even before you start your Pluto session.
 """
 
 # ╔═╡ f76f329a-8dde-4790-96f2-ade735643aeb
@@ -77,7 +77,7 @@ elseif haskey(ENV,"SLURM_CPUS_PER_TASK") && haskey(ENV,"SLURM_TASKS_PER_NODE")
 	md"Your Slurm job was allocated $procs_per_node CPU cores per node."
 else
 	procs_per_node = missing
-	md"It appears you're not running this on Roar Collab.  Later in the notebook, we'll try to use all the cores on your local machine."
+	md"It appears you're not running this on the Lynx or Roar Collab clusters.  Later in the notebook, we'll try to use all the cores on your local machine."
 end
 
 # ╔═╡ 0e4d7808-47e2-4740-ab93-5d3973eecaa8
@@ -96,7 +96,7 @@ This notebook is using **$(Threads.nthreads()) threads**.
 
 # ╔═╡ 7df5fc86-889f-4a5e-ac2b-8c6f68d7c32e
 warning_box(md"""
-Even when you have a JupyterLab server (or remote desktop or Slurm or PBS job) that has been allocated multiple CPU cores, that doesn't mean that any code will make use of more than one core.  The Roar Collab Portal's Pluto server for this class has been configured to start notebooks with as many threads as physical cores that were allocated to the parent job.
+Even when you have a JupyterLab server (or remote desktop or Slurm or PBS job) that has been allocated multiple CPU cores, that doesn't mean that any code will make use of more than one core.  The Lynx Portal's Pluto server for this class has been configured to start notebooks with as many threads as physical cores that were allocated to the parent job.
 
 If you start julia manually (e.g., from the command line or remote desktop), then you should check that its using the desired number of threads.  The number can be can control using either the `JULIA_NUM_THREADS` environment variable or the `-t` option on the command line.  Somewhat confusingly, even if you start julia using multiple threads, that doesn't mean that the Pluto server will assign that many threads to each notebook.  If you run your own Pluto server, then you can control the number of threads used within a notebook by starting it with
 ```julia
@@ -134,7 +134,7 @@ cputhreads() # query number of logical cores
 if cpucores() < cputhreads()
 	warning_box(md"""Your processor is presenting itself as having $(cputhreads()) cores, when it really only has $(cpucores()) cores.  Make sure to limit the number of threads to $(cpucores()).  
 	
-	If you're running on Roar Collab, then you should also limit the number of threads you use to the number of CPU cores assigned to your job by the slurm workload manager.
+	If you're running on Lynx or Roar Collab, then you should also limit the number of threads you use to the number of CPU cores assigned to your job by the slurm workload manager.
 	""")
 end
 
@@ -531,7 +531,7 @@ end
 
 # ╔═╡ bbdd495c-f2c6-4264-a4e9-5083753eb410
 md"""
-One advantage of parallelizing your code with [FLoops.jl](https://juliafolds.github.io/FLoops.jl/dev/) is that it then becomes very easy to compare the performance of a calculation in serial and in parallel using different **[executors](https://juliafolds.github.io/FLoops.jl/dev/tutorials/parallel/#tutorials-executor)** that specify how the calculation should be implemented.  There are different parallel executor for shared-memory parallelism (via multi-threading this exercise), distributed-memory parallelism (see [Lab 7](https://github.com/PsuAstro528/lab7-start)) and even for parallelizing code over a GPUs (although there are some restrictions on what code can be run on the GPU, that we'll see in a [Lab 8](https://github.com/PsuAstro528/lab8-start)).
+One advantage of parallelizing your code with [FLoops.jl](https://juliafolds.github.io/FLoops.jl/dev/) is that it then becomes very easy to compare the performance of a calculation in serial and in parallel using different **[executors](https://juliafolds.github.io/FLoops.jl/dev/tutorials/parallel/#tutorials-executor)** that specify how the calculation should be implemented.  There are different parallel executor for shared-memory parallelism (via multi-threading this exercise), distributed-memory parallelism (see [Lab 7](https://github.com/PsuAstro528/lab7)) and even for parallelizing code over a GPUs (although there are some restrictions on what code can be run on the GPU, that we'll see in a [Lab 8](https://github.com/PsuAstro528/lab8)).
 """
 
 # ╔═╡ 383aa611-e115-482e-873c-4487e53d457f
