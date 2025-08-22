@@ -3,11 +3,11 @@
 Before starting this lab, make sure you've successfully gotten setup to use git, Julia and Pluto.
 The first lab contained detailed instructions for using the Jupyter Lab server to work with Pluto notebooks.  
 
-If you'll be using the Roar Collab portal to access the JupyterLab server, then you need to request multiple processor cores when you first submit the request for the JupyterLab session using the box labeled "Number of Cores", i.e. before you start executing cells in this notebook.
+If you'll be using the Lynx Collab portal to access the JupyterLab server, then you need to request multiple processor cores when you first submit the request for the JupyterLab session using the box labeled "Number of Cores", i.e. before you start executing cells in this notebook.
 ![screen shot showing how to request multiple cores](images/portal_screenshot.png)
 
-While we're in class (or the night before the lab is due), please ask for just 4 cores, since there could be ~18 of us using the system at once.
-When working on the lab (or your project) outside of class, feel free to try benchmarking the code using 8 cores or even 16 cores.  For sessions where you ask for several cores, then please be extra diligent about closing your session when you're done, so they are made available for other users.
+While we're in class (or the night before the lab is due), please ask for just 4 cores, since there could be ~20 of us using the system at once.
+When working on the lab (or your project) outside of class, feel free to try benchmarking the code using 8 cores, 16 or 32 cores for brief time (e.g., a few minutes).  (Our class is limited to two nodes with 48 cores each.)  For sessions where you ask for several cores, then please be extra diligent about closing your session promptly when you're done, so they are made available for other users.
 
 Remember, that you need follow the provided link to create your own private copy of this lab's repository on GitHub.com.   See the
 [help on the course website](https://psuastro528.github.io/Fall2025/tips/labs/) for instructions on cloning, committing, pushing and reviewing your work.
