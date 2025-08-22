@@ -10,7 +10,7 @@ While we're in class (or the night before the lab is due), please ask for just 4
 When working on the lab (or your project) outside of class, feel free to try benchmarking the code using 8 cores or even 16 cores.  For sessions where you ask for several cores, then please be extra diligent about closing your session when you're done, so they are made available for other users.
 
 Remember, that you need follow the provided link to create your own private copy of this lab's repository on GitHub.com.   See the
-[help on the course website](https://psuastro528.github.io/Fall2023/tips/labs/) for instructions on cloning, committing, pushing and reviewing your work.
+[help on the course website](https://psuastro528.github.io/Fall2025/tips/labs/) for instructions on cloning, committing, pushing and reviewing your work.
 
 
 ## Exercise 1:  Parallelization for Multi-Core Workstations via Multiple-Threads
