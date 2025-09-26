@@ -13,7 +13,7 @@ Remember, that you need follow the provided link to create your own private copy
 [help on the course website](https://psuastro528.github.io/Fall2025/tips/labs/) for instructions on cloning, committing, pushing and reviewing your work.
 
 
-## Exercise 1:  Parallelization for Multi-Core Workstations via Multiple-Threads
+## Exercise 1:  [Parallelization for Multi-Core Workstations via Multiple-Threads](https://psuastro528.github.io/lab6/ex1.html)
 ### Goals:
 - Choose an appropriate number of worker processors for your compute node
 - Parallelize code using ThreadsX.map and ThreadsX.mapreduce
@@ -24,7 +24,7 @@ Remember, that you need follow the provided link to create your own private copy
 From a Pluto session, work through ex1.jl
 
 
-## Exercise 2:  Parallelization for Multi-Core Workstations via Multiple Processes
+## Exercise 2:  [Parallelization for Multi-Core Workstations via Multiple Processes](https://psuastro528.github.io/lab6/ex2.html)
 ### Goals:
 - Load code and packages on worker nodes
 - Parallelize code using pmap
