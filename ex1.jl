@@ -19,13 +19,13 @@ end
 # ╔═╡ 76730d06-06da-4466-8814-2096b221090f
 begin
 	# Packages for Notebook experience
-	using PlutoUI, PlutoTeachingTools, PlutoTest
+	using PlutoUI, PlutoLinks, PlutoTeachingTools, PlutoTest
 	using Plots
 
 	# Packages for parallelization
 	#using SharedArrays
-	using CpuId
-	using ThreadsX
+	using CpuId, Hwloc
+	using ThreadsX, OhMyThreads, Polyester
 	using FLoops
 	# Packages for benchmarking
 	using BenchmarkTools
@@ -49,14 +49,14 @@ md"""
 md"""
 In this lab, we'll explore a multiple different ways that we can parallelize calculations across multiple cores of a single workstation or server.
 This exercise will focus on parallelization using multiple *threads*.
-A separate exercise will focus on parallelization using multiple *processes*, but using a Jupyter notebook, rather than a Pluto notebook (due to internals of how Pluto works).
+A separate exercise will focus on parallelization using multiple *processes*.
 """
 
 # ╔═╡ 629442ba-a968-4e35-a7cb-d42a0a8783b4
 protip(md"""
-In my experience, parallelization via multiple threads tends to be more efficient than using multiple processes.  Multi-threading is my "go-to" method for an initial parallelization.  That said, it's good to be aware of some of the reasons that others may choose to parallelize their code over multiple processes (e.g., if you're concerned about security of data, robustness to errors in one process).  For me, the main advantage of using multiple processes is that multiple processes will be necessary once we transition to distributed memory computing.  Therefore, parallelizing your code using multiple processes can make it easier to scale up to more cores than are avaliable in a single node.
+In my experience, parallelization via multiple threads tends to be more efficient than using multiple processes for small to mid-scale parallelization (several to tens of cores).  For larger-scale parallelization (hundreds or thousands of cores), using multiple processes can be advantagous or even required.   For me, multi-threading is my "go-to" method for an initial parallelization.  That said, it's good to be aware of some of the reasons that some projects choose to parallelize their code over multiple processes (e.g., if you're concerned about security of data, robustness to errors in one process).  For me, the main advantage of using multiple processes is that multiple processes will be necessary once we transition to distributed memory computing.  Therefore, parallelizing your code using multiple processes can make it easier to scale up when you want to use more cores or more memory than is avaliable in a single node.
 
-That said, near the end of this exercise we'll see an example of how a programming interfaces that makes it easy to transition code between multi-threaded and mulit-process models.
+Near the end of this exercise we'll see an example of how a programming interfaces that makes it easy to transition code between multi-threaded and mulit-process models.
 """)
 
 # ╔═╡ 0bee1c3c-b130-49f2-baa4-efd8e3b49fdc
@@ -76,8 +76,8 @@ elseif haskey(ENV,"SLURM_CPUS_PER_TASK") && haskey(ENV,"SLURM_TASKS_PER_NODE")
 	procs_per_node = procs_per_task * tasks_per_node
 	md"Your Slurm job was allocated $procs_per_node CPU cores per node."
 else
-	procs_per_node = missing
-	md"It appears you're not running this on the Lynx or Roar Collab clusters.  Later in the notebook, we'll try to use all the cores on your local machine."
+	procs_per_node = cpucores()
+	md"It appears you're not running this on the Lynx or Roar Collab clusters."
 end
 
 # ╔═╡ 0e4d7808-47e2-4740-ab93-5d3973eecaa8
@@ -85,7 +85,7 @@ if !ismissing(procs_per_node)
 	if procs_per_node > 4
 		warning_box(md"""While we're in class (and the afternoon/evening before labs are due), please ask for just 4 cores, so there will be enough to go around.
 
-		If you return to working on the lab outside of class, then feel free to try benchmarking the code using 8 cores or even 16 cores. Anytime you ask for several cores, then please be extra diligent about closing your session when you're done.""")
+		If you return to working on the lab outside of class, then feel free to try benchmarking the code using 8 cores or even 16 cores. Anytime you ask for more than four cores, then please be extra diligent about closing your session when you're done.""")
 	end		
 end
 
@@ -132,7 +132,7 @@ cputhreads() # query number of logical cores
 
 # ╔═╡ 53da8d7a-8620-4fe5-81ba-f615d2d4ed2a
 if cpucores() < cputhreads()
-	warning_box(md"""Your processor is presenting itself as having $(cputhreads()) cores, when it really only has $(cpucores()) cores.  Make sure to limit the number of threads to $(cpucores()).  
+	warning_box(md"""Your processor is presenting itself as having $(cputhreads()) cores, when it really only has $(cpucores()) cores.  I suggest limiting the number of threads to $(cpucores()).  
 	
 	If you're running on Lynx or Roar Collab, then you should also limit the number of threads you use to the number of CPU cores assigned to your job by the slurm workload manager.
 	""")
@@ -151,7 +151,7 @@ Threads.nthreads()  # Number of threads avaliable to this Pluto notebook
 md"1a.  How many threads is your notebook using?  (Please enter it as an integer rather than a function call, so that it gets stored in your notebook.  That way the TA and I will be able to interpret the speed-up factors you get below.)"
 
 # ╔═╡ 0bcde4df-1e31-4774-a31f-bd451bb6f758
-response_1a = 8 # missing # Insert response as simple integer, and not as a variable for function
+response_1a = missing # Insert response as simple integer, and not as a variable for function
 
 # ╔═╡ c41d65e3-ea35-4f97-90a1-bfeaeaf927ad
 begin
@@ -179,7 +179,7 @@ md"""
 For this lab, I've written several functions that will be used to generate simulated spectra with multiple absorption lines.  This serves a couple of purposes.
 First, you'll use the code in the exercise, so you have a calculation that's big enough to be worth parallelizing.  For the purposes of this exercise, it's not essential that you review the code I provided in the `src/*.jl` files.  However, the second purpose of this example is providing code that demonstrates several of the programming patterns that we've discussed in class.  For example, the code in the `ModelSpectrum` module
 - is in the form of several small functions, each which does one specific task.
-- has been moved out of the Jupyter notebook and into `.jl` files in the `src` directory.
+- has been moved out of the notebook and into `.jl` files in the `src` directory.
 - creates objects that compute a model spectrum and a convolution kernel.
 - uses [abstract types](https://docs.julialang.org/en/v1/manual/types/#Abstract-Types-1) and [parametric types](https://docs.julialang.org/en/v1/manual/types/#Parametric-Types-1), so as to create type-stable functions.
 - has been put into a Julia [module](https://docs.julialang.org/en/v1/manual/modules/index.html), so that it can be easily loaded and so as to limit potential for namespace conflicts.
@@ -359,7 +359,7 @@ md"""
 """
 
 # ╔═╡ ca8ceb27-86ea-4b90-a1ae-86d794c9fc98
-response_1b = missing  # md"Insert your responce"
+response_1b = "" # missing  # md"Insert your responce"
 
 # ╔═╡ 4ad081a2-b5c2-48ff-9a28-ec9c8d9f0d0e
 begin
@@ -376,7 +376,7 @@ md"""
 """
 
 # ╔═╡ a25c6705-54f4-4bad-966e-a8f13ae4c711
-response_1c = missing  # md"Insert your responce"
+response_1c = "" #missing  # md"Insert your responce"
 
 # ╔═╡ 739136b1-6b01-44c0-bbfd-dcb490d1e191
 begin
@@ -412,6 +412,9 @@ begin
 	end
 end
 
+# ╔═╡ b4cbb43d-6e4c-4917-99a4-03d13e736144
+chunksize_for_onmythreads = 256
+
 # ╔═╡ bd81357b-c461-458e-801c-610893dd5ea1
 md"## Parallel Loop"
 
@@ -426,7 +429,7 @@ md"""
 """
 
 # ╔═╡ 86e7d984-c128-4d2e-8599-3bc70db87a1d
-response_1e = missing # md"Insert your response"
+response_1e = "" #missing # md"Insert your response"
 
 # ╔═╡ c69c0a4a-b90b-414c-883d-3aa50c04b5e1
 begin
@@ -437,29 +440,35 @@ begin
 	end
 end
 
+# ╔═╡ 3604a697-8f21-447f-bf75-b3af989e9896
+md"""
+Once you've made your prediction, we'll time `calc_spectrum_threaded_for_loop`.
+"""
+
 # ╔═╡ 791041e9-d277-4cac-a5ac-1d6ec52e0287
 md"""
-While Threads.@threads can be useful for some simple tasks, there is active development of packages that provide additional features for multi-threaded programming.  For example, the ThreadsX package provides a `foreach` function and the FLoops package provides a `@floop` macro, both of which we'll demonstrate and benchmark below.
+While Threads.@threads can be useful for some simple tasks, there is active development of packages that provide additional features for multi-threaded programming.  For example, the [ThreadsX.jl](https://github.com/tkf/ThreadsX.jl) packageprovides a `foreach` function, the [OhMyThreads.jl](https://juliafolds2.github.io/OhMyThreads.jl/stable/) packages provides a `tforeach` and the FLoops package provides a `@floop` macro, each of which I demonstrate below.
+"""
+
+# ╔═╡ f9b3f5ce-cfc1-4d59-b21e-2fd07075f036
+md"""
+At first, it may seem like the above examples are just alternative syntaxes for writing a loop parallelized over multiple threads.  Each packages to help you parallel code efficiently is optimized for different circumstances and considerations. For now, I just wanted to demonstrate the syntax of each in case it would be useful to you for your project.  
 """
 
 # ╔═╡ 7c367a0b-c5b9-459b-9ccf-e07c84e0b32a
 protip(md"""
-There are several more packages to help you parallel code efficiently in different circumstances.  For example, [ThreadPools](https://github.com/tro3/ThreadPools.jl) provides multiple variants of `map` and `foreach`, so you can easily choose between how work is scheduled among the workers and whether the delegator thread is assigned work.  
+Inevitably, one package/pattern for parallelizing your code will be a little more efficient than the others. But there are often multiple ways to implement parallelism that result in comparable in run-time. When the performance is similar, other considerations (e.g., ease of programming, quality of documentation, ease swapping out different parallelization strategies) may play a major role in your decision of how to implement parallelism.
+	   
+[`ThreadsX.jl`](https://github.com/tkf/ThreadsX.jl) provides a drop-in replacement for several functions from Base.  The common interface makes it easy to swap in for serial code quickly.  
+
+[`OhMyThreads.jl`](https://juliafolds2.github.io/OhMyThreads.jl/stable/) provides very similar syntax with just slightly different names.  It's also being actively developed and improved.  One distinguishing features is that it aims to allow nested threaded operations to result in good performance.  If I had to recommend just one package for multi-threading this is what I'd currently  recommend.   
+
+In terms of raw performance, [Polyester.jl](https://github.com/JuliaSIMD/Polyester.jl) appears to be the fastest at the moment, particularly for loops that have little computation.  However, it can only uses a static schedule. Therefore, nested parallel loops don't work well with Polyester.
+
+While [FLoops.jl](https://github.com/JuliaFolds/FLoops.jl) requires a somewhat different syntax, it can makes it easier to swap between multiple forms of parallelism.  Therefore, writing your code so it can be multi-threaded using FLoops is likely to make it very easy to parallelize your code for a distributed memory architecture.  FLoops can even make it easy to parallelize codes using a GPU.  
+
+It's worth keeping these tradeoffs in mind when planning your project.  
 """)
-
-# ╔═╡ 2b00f6fc-9bfd-48d6-a4d8-ac95f7e71faa
-md"""
-Inevitably, one package/pattern for parallelizing your code will be a little more efficient than the others. But there are often multiple ways to implement parallelism that are comparable in run-time. When the performance is similar, other considerations (e.g., ease of programming, quality of documentation, ease swapping out different parallelization strategies) may play a major role in your decision of how to implement parallelism.
-"""
-
-# ╔═╡ ea002e89-9f4e-441e-8998-5e9c99bb27e0
-md"""
-At first, it may seem like the above examples are just alternative syntaxes for writing a loop parallelized over multiple threads.  Why are these worth learning about?  
-
-ThreadsX provides a drop-in replacement for several functions from Base.  The common interface makes it easy to swap in for serial code quickly.  
-
-While FLoops requires a somewhat different syntax, it makes it relatively easy to swap between multiple forms of parallelism.  Therefore, writing your code so it can be multi-threaded using FLoops is likely to make it very easy to parallelize your code for a distributed memory architecture.  FLoops can even make it easy to parallelize codes using a GPU.  Thus, it's worth keeping these in mind when planning your project.  
-"""
 
 # ╔═╡ d43525da-e0a2-4d2f-9dbb-bf187eebf6c1
 tip(md"""
@@ -502,11 +511,15 @@ Next, we'll use [FLoops.jl](https://github.com/JuliaFolds/FLoops.jl) to compute 
 
 # ╔═╡ 7def3535-6f90-4bf8-b86f-aac278666663
 md"""
-1f.  How do you expect the performance of `calc_mse_flloop` to compare to the performance of `calc_spectrum_flloop` and `calc_mse_loop`?
+1f.  How do you expect the walltime of `calc_mse_flloop` to compare to the wall times of `calc_mse_loop`?
+
+**OR**  # TODO DECIDE WHICH TO KEEP
+
+How do you expect the walltime of `calc_mse_ohmythreads` to compare to the wall times of `calc_mse_loop`?
 """
 
 # ╔═╡ 1989da2a-1fe2-49a0-b279-5925ae4b428c
-response_1f = missing # md"Insert your response"
+response_1f = "" #missing # md"Insert your response"
 
 # ╔═╡ 8d7c27d5-4a07-4ab4-9ece-94fdb7053f73
 begin
@@ -563,7 +576,8 @@ mapreduce_batchsize = 8
 
 # ╔═╡ 3f01d534-b01d-4ab4-b3cd-e809b02563a9
 md"""
-1h.  How did the performance of `calc_mse_mapreduce_threadsx` compare to the performance of `calc_mse_map_mapreduce`?  Can you explain why this differs from the comparison of `calc_spectrum_mapreduce_threadsx` to `ThreadsX.map(conv_spectrum,lambdas,..)`?
+1h.  How did the performance of `calc_mse_mapreduce_threadsx` or `calc_mse_mapreduce_ohmythreads` compare to the performance of `calc_mse_map_mapreduce`?  
+Can you explain why this differs from the comparison of `calc_spectrum_mapreduce_threadsx` to `ThreadsX.map(conv_spectrum,lambdas,..)`?
 """
 
 # ╔═╡ d16adf94-72c3-480d-bd92-738e806068f8
@@ -611,11 +625,25 @@ begin
     σ_obs2 = 0.02*ones(size(lambdas))
 end;
 
+# ╔═╡ 35b1b5b1-2a23-44bb-bc19-805393d18d8a
+md"""
+#### Extra information about your hardware
+"""
+
+# ╔═╡ ec08aa84-3f63-441a-a31c-85b7a82412d1
+Hwloc.topology_info()
+
+# ╔═╡ 21b3c52e-533f-488f-a2eb-602600b66738
+Hwloc.cachesize()
+
+# ╔═╡ e38e0b91-dbd3-4cc6-87ac-add4953411d1
+Hwloc.cachelinesize()
+
 # ╔═╡ 3b50062c-99c1-4f68-aabe-2d40d4ad7504
 md"## Helper code"
 
 # ╔═╡ d83a282e-cb2b-4837-bfd4-8404b3722e3a
-ChooseDisplayMode()
+WidthOverDocs()
 
 # ╔═╡ c9cf6fb3-0146-42e6-aaae-24e97254c805
 TableOfContents(aside=true)
@@ -730,6 +758,24 @@ if !ismissing(response_1c)
 	walltime_ThreadsXmap_batched = @elapsed ThreadsX.map(conv_spectrum,lambdas,basesize=batchsize_for_ThreadsXmap)
 end
 
+# ╔═╡ 5acc645a-0d32-4f51-8aa6-063725b83fa8
+if !ismissing(response_1c)
+	tmap(conv_spectrum,lambdas)
+	walltime_OhMyThreadsmap_default = @elapsed tmap(conv_spectrum,lambdas)
+end
+
+# ╔═╡ af161709-46d2-4c73-b10d-90acb1e85189
+if !ismissing(response_1c)
+	tmap(conv_spectrum,lambdas)
+	walltime_OhMyThreadsmap_static_batched = @elapsed tmap(conv_spectrum,lambdas, scheduler=:static, chunksize=chunksize_for_onmythreads)
+end
+
+# ╔═╡ 1e93928c-7f4c-4295-b755-4e5e16adbd8e
+if !ismissing(response_1c)
+	tmap(conv_spectrum,lambdas)
+	walltime_OhMyThreadsmap_dynamic = @elapsed tmap(conv_spectrum,lambdas, scheduler=:dynamic, chunksize=chunksize_for_onmythreads)
+end
+
 # ╔═╡ 4b9a98ba-1731-4707-89a3-db3b5ac3a79b
 function calc_spectrum_loop(x::AbstractArray, spectrum::T) where T<:AbstractSpectrum
     out = zeros(length(x))
@@ -764,6 +810,23 @@ if !ismissing(response_1e)
 		bytes=stats_spec_threaded_loop.bytes )
 end
 
+# ╔═╡ f272eab0-8a33-4161-bf9e-e378255631dd
+function calc_spectrum_ohmythreads_foreach(x::AbstractArray, spectrum::T ) where { T<:AbstractSpectrum }
+    out = zeros(length(x))
+	OhMyThreads.tforeach(eachindex(out, x)) do i
+           @inbounds out[i] = spectrum(x[i])
+    end
+    return out
+end
+
+# ╔═╡ d43540d3-beb9-45aa-98cd-1a77f6b8db10
+if true
+	result_spec_ohmythreads_foreach = calc_spectrum_ohmythreads_foreach(lambdas,conv_spectrum)
+	stats_spec_ohmythreads_foreach = @timed calc_spectrum_ohmythreads_foreach(lambdas,conv_spectrum)
+	(;  time=stats_spec_ohmythreads_foreach.time,
+		bytes=stats_spec_ohmythreads_foreach.bytes )
+end
+
 # ╔═╡ c65aa7b6-d85e-4efa-a2ee-1b615155796e
 function calc_spectrum_threadsX_foreach(x::AbstractArray, spectrum::T ) where { T<:AbstractSpectrum }
     out = zeros(length(x))
@@ -779,6 +842,23 @@ if true
 	stats_spec_threadsX_foreach = @timed calc_spectrum_threadsX_foreach(lambdas,conv_spectrum)
 	(;  time=stats_spec_threadsX_foreach.time,
 		bytes=stats_spec_threadsX_foreach.bytes )
+end
+
+# ╔═╡ 48b1fc18-eaaf-4f5e-9275-1e942dfbd643
+function calc_spectrum_polyester_foreach(x::AbstractArray, spectrum::T ) where { T<:AbstractSpectrum }
+    out = zeros(length(x))
+	@batch for i in eachindex(out, x)
+           @inbounds out[i] = spectrum(x[i])
+    end
+    return out
+end
+
+# ╔═╡ 6a09fa9c-f04e-466f-9746-beb2a7cfdfa3
+if true
+	result_spec_polyester_foreach = calc_spectrum_polyester_foreach(lambdas,conv_spectrum)
+	stats_spec_polyester_foreach = @timed calc_spectrum_polyester_foreach(lambdas,conv_spectrum)
+	(;  time=stats_spec_polyester_foreach.time,
+		bytes=stats_spec_polyester_foreach.bytes )
 end
 
 # ╔═╡ 9b734e9c-f571-4a09-9744-221dcd55b4bf
@@ -834,6 +914,7 @@ end
 if true
 	result_mse_loop = calc_mse_loop(lambdas,conv_spectrum,conv_spectrum,v)
 	stats_mse_loop = @timed calc_mse_loop(lambdas,conv_spectrum,conv_spectrum,v)
+	(;  time=stats_mse_loop.time, bytes=stats_mse_loop.bytes )
 end
 
 # ╔═╡ 6e52c719-e9fc-478a-9709-49e250a27d6b
@@ -873,11 +954,39 @@ if !ismissing(response_1f)
 	(;  time=stats_mse_flloop.time, bytes=stats_mse_flloop.bytes )
 end
 
+# ╔═╡ 293ad084-6d6a-4401-9819-53a24646d2c9
+function calc_mse_ohmythreads(lambdas::AbstractArray, spec1::AbstractSpectrum, spec2::AbstractSpectrum,  v::Number; ex = ThreadedEx())
+	c = ModelSpectrum.speed_of_light
+	z = v/c
+	spec2_shifted = doppler_shifted_spectrum(spec2,z)
+	tmp1 = spec1(first(lambdas))
+    tmp2 = spec2_shifted(first(lambdas))
+	#mse = zero(promote_type(typeof(tmp1),typeof(tmp2)))
+	mse = OhMyThreads.@tasks for i in eachindex(lambdas)
+        @set reducer = +
+		@local begin
+			l = zero(eltype(lambdas))
+			diffsq = zero(promote_type(typeof(tmp1),typeof(tmp2)))
+		end
+		l = lambdas[i]
+		diffsq = (spec1(l)-spec2_shifted(l))^2
+    end
+	mse /= length(lambdas)
+    return mse
+end
+
+# ╔═╡ 3231b010-718a-4863-be43-1f0326451e96
+if !ismissing(response_1f)
+	result_mse_ohmythreads = calc_mse_ohmythreads(lambdas,conv_spectrum,conv_spectrum,v)
+	stats_mse_ohmythreads = @timed calc_mse_ohmythreads(lambdas,conv_spectrum,conv_spectrum,v)
+	(;  time=stats_mse_ohmythreads.time, bytes=stats_mse_ohmythreads.bytes )
+end
+
 # ╔═╡ 3183c6ac-5acd-4770-a638-c4c6ba3f7c4f
 if !ismissing(response_1f)
 md"""
-1g.  How did the performance of `calc_mse_flloop` compare to the performance of `calc_mse_loop`?  Was the wall time for the parallel loop to compute the mean squared error  $(stats_mse_flloop.time) sec
-nearly twice that of the parallel loop to compute one spectrum $(stats_spec_flloop.time) sec?  Try to explain the main differences.
+1g.  How did the performance of `calc_mse_flloop` or `calc_mse_ohmythreads` to the performance of `calc_mse_loop`?  Was the wall time for the parallel loop to compute the mean squared error  $(round(stats_mse_flloop.time,digits=3)) sec or $(round(stats_mse_ohmythreads.time,digits=3)) sec
+nearly twice that of the parallel loop to compute one spectrum $(round(stats_spec_flloop.time,digits=3)) sec?  Try to explain the main differences.
 """
 end
 
@@ -895,6 +1004,30 @@ begin
 	result_mse_mapreduce_serial = calc_mse_mapreduce(lambdas,conv_spectrum,conv_spectrum,v)
 	stats_mse_mapreduce_serial = @timed calc_mse_mapreduce(lambdas, conv_spectrum,conv_spectrum,v)
 	(;  time=stats_mse_mapreduce_serial.time, bytes=stats_mse_mapreduce_serial.bytes )
+end
+
+# ╔═╡ ab886349-5f3f-45e9-a6e1-a81fdfafa72f
+function calc_mse_mapreduce_ohmythreads(lambdas::AbstractArray, spec1::AbstractSpectrum, spec2::AbstractSpectrum,  v::Number; basesize::Integer = 1)
+	c = ModelSpectrum.speed_of_light
+	z = v/c
+	spec2_shifted = doppler_shifted_spectrum(spec2,z)
+	mse = tmapreduce(λ->(spec1.(λ) .- spec2_shifted.(λ)).^2, +, lambdas, chunksize=basesize)
+	mse /= length(lambdas)
+end
+
+# ╔═╡ 19052549-3c5d-4b49-b708-05eac0a2a0ac
+begin
+	result_mse_mapreduce_ohmythreads = calc_mse_mapreduce_ohmythreads(lambdas,conv_spectrum,conv_spectrum,v)
+	stats_mse_mapreduce_ohmythreads = @timed calc_mse_mapreduce_ohmythreads(lambdas,conv_spectrum,conv_spectrum,v)
+	(;  time=stats_mse_mapreduce_ohmythreads.time, bytes=stats_mse_mapreduce_ohmythreads.bytes )
+
+end
+
+# ╔═╡ 7eccc74d-9a49-44d9-9e43-cbb3c8ad7ce5
+begin
+	result_mse_mapreduce_ohmythreads_batched = calc_mse_mapreduce_ohmythreads(lambdas,conv_spectrum,conv_spectrum,v; basesize=mapreduce_batchsize)
+	stats_mse_mapreduce_ohmythreads_batched = @timed calc_mse_mapreduce_ohmythreads(lambdas,conv_spectrum,conv_spectrum,v; basesize=mapreduce_batchsize)
+	(;  time=stats_mse_mapreduce_ohmythreads_batched.time, bytes=stats_mse_mapreduce_ohmythreads_batched.bytes )
 end
 
 # ╔═╡ 1778899b-8f05-4b1f-acb5-32af1ace08ee
@@ -986,10 +1119,14 @@ BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CpuId = "adafc99b-e345-5852-983c-f28acb93d879"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 FLoops = "cc61a311-1640-44b5-9fba-1b764f453329"
+Hwloc = "0e44f5e4-bd66-52a0-8798-143a42290a1d"
+OhMyThreads = "67456a42-1dca-4109-a031-0a68de7e3ad5"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+PlutoLinks = "0ff47ea0-7a50-410d-8455-4348d5de0420"
 PlutoTeachingTools = "661c6b06-c737-4d37-b85c-46df65de6f69"
 PlutoTest = "cb4044da-4d16-4ffa-a6a3-8cad7f73ebdc"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
+Polyester = "f517fe37-dbe3-4b94-8317-1923a5111588"
 QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
@@ -1000,10 +1137,14 @@ BenchmarkTools = "~1.6.0"
 CpuId = "~0.3.1"
 Distributions = "~0.25.120"
 FLoops = "~0.2.2"
+Hwloc = "~3.3.0"
+OhMyThreads = "~0.8.3"
 Plots = "~1.40.19"
+PlutoLinks = "~0.1.6"
 PlutoTeachingTools = "~0.4.5"
 PlutoTest = "~0.2.2"
 PlutoUI = "~0.7.71"
+Polyester = "~0.7.18"
 QuadGK = "~2.11.2"
 StaticArrays = "~1.9.14"
 ThreadsX = "~0.1.12"
@@ -1015,7 +1156,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.11.2"
 manifest_format = "2.0"
-project_hash = "6ee44b84a4be1d7b6bf29add8ca57fa1036daea1"
+project_hash = "4b6cb2a996c901063779d30f27767c74e17a55b1"
 
 [[deps.AbstractPlutoDingetjes]]
 deps = ["Pkg"]
@@ -1073,6 +1214,40 @@ version = "2.5.0"
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
 version = "1.1.2"
 
+[[deps.ArrayInterface]]
+deps = ["Adapt", "LinearAlgebra"]
+git-tree-sha1 = "dbd8c3bbbdbb5c2778f85f4422c39960eac65a42"
+uuid = "4fba245c-0d91-5ea0-9b3e-6abc04ee57a9"
+version = "7.20.0"
+
+    [deps.ArrayInterface.extensions]
+    ArrayInterfaceBandedMatricesExt = "BandedMatrices"
+    ArrayInterfaceBlockBandedMatricesExt = "BlockBandedMatrices"
+    ArrayInterfaceCUDAExt = "CUDA"
+    ArrayInterfaceCUDSSExt = "CUDSS"
+    ArrayInterfaceChainRulesCoreExt = "ChainRulesCore"
+    ArrayInterfaceChainRulesExt = "ChainRules"
+    ArrayInterfaceGPUArraysCoreExt = "GPUArraysCore"
+    ArrayInterfaceMetalExt = "Metal"
+    ArrayInterfaceReverseDiffExt = "ReverseDiff"
+    ArrayInterfaceSparseArraysExt = "SparseArrays"
+    ArrayInterfaceStaticArraysCoreExt = "StaticArraysCore"
+    ArrayInterfaceTrackerExt = "Tracker"
+
+    [deps.ArrayInterface.weakdeps]
+    BandedMatrices = "aae01518-5342-5314-be14-df237901396f"
+    BlockBandedMatrices = "ffab5731-97b5-5995-9138-79e8c1846df0"
+    CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+    CUDSS = "45b445bb-4962-46a0-9369-b4df9d0f772e"
+    ChainRules = "082447d4-558c-5d27-93f4-14fc19e9eca2"
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
+    Metal = "dde4c033-4e86-420c-a63e-0dd931031962"
+    ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
+    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+    StaticArraysCore = "1e83bf80-4336-4d27-bf5d-d5a4f845583c"
+    Tracker = "9f7883ad-71c0-57eb-9f7f-b5c9e6d3789c"
+
 [[deps.Artifacts]]
 uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
 version = "1.11.0"
@@ -1119,17 +1294,51 @@ git-tree-sha1 = "0691e34b3bb8be9307330f88d1a3c3f25466c24d"
 uuid = "d1d4a3ce-64b1-5f1a-9ba4-7e7e69966f35"
 version = "0.1.9"
 
+[[deps.BitTwiddlingConvenienceFunctions]]
+deps = ["Static"]
+git-tree-sha1 = "f21cfd4950cb9f0587d5067e69405ad2acd27b87"
+uuid = "62783981-4cbd-42fc-bca8-16325de8dc4b"
+version = "0.1.6"
+
 [[deps.Bzip2_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "1b96ea4a01afe0ea4090c5c8039690672dd13f2e"
 uuid = "6e34b625-4abd-537c-b88f-471c36dfa7a0"
 version = "1.0.9+0"
 
+[[deps.CEnum]]
+git-tree-sha1 = "389ad5c84de1ae7cf0e28e381131c98ea87d54fc"
+uuid = "fa961155-64e5-5f13-b03f-caf6b980ea82"
+version = "0.5.0"
+
+[[deps.CPUSummary]]
+deps = ["CpuId", "IfElse", "PrecompileTools", "Preferences", "Static"]
+git-tree-sha1 = "f3a21d7fc84ba618a779d1ed2fcca2e682865bab"
+uuid = "2a0fbf3d-bb9c-48f3-b0a9-814d99fd7ab9"
+version = "0.2.7"
+
 [[deps.Cairo_jll]]
 deps = ["Artifacts", "Bzip2_jll", "CompilerSupportLibraries_jll", "Fontconfig_jll", "FreeType2_jll", "Glib_jll", "JLLWrappers", "LZO_jll", "Libdl", "Pixman_jll", "Xorg_libXext_jll", "Xorg_libXrender_jll", "Zlib_jll", "libpng_jll"]
 git-tree-sha1 = "fde3bf89aead2e723284a8ff9cdf5b551ed700e8"
 uuid = "83423d85-b0ee-5818-9007-b63ccbeb887a"
 version = "1.18.5+0"
+
+[[deps.ChunkSplitters]]
+git-tree-sha1 = "63a3903063d035260f0f6eab00f517471c5dc784"
+uuid = "ae650224-84b6-46f8-82ea-d812ca08434e"
+version = "3.1.2"
+
+[[deps.CloseOpenIntervals]]
+deps = ["Static", "StaticArrayInterface"]
+git-tree-sha1 = "05ba0d07cd4fd8b7a39541e31a7b0254704ea581"
+uuid = "fb6a15b2-703c-40df-9091-08a04967cfa9"
+version = "0.1.13"
+
+[[deps.CodeTracking]]
+deps = ["InteractiveUtils", "UUIDs"]
+git-tree-sha1 = "062c5e1a5bf6ada13db96a4ae4749a4c2234f521"
+uuid = "da1fd8a2-8d9e-5ec2-8556-3022fb5608a2"
+version = "1.3.9"
 
 [[deps.CodecZlib]]
 deps = ["TranscodingStreams", "Zlib_jll"]
@@ -1168,6 +1377,11 @@ deps = ["ColorTypes", "FixedPointNumbers", "Reexport"]
 git-tree-sha1 = "37ea44092930b1811e666c3bc38065d7d87fcc74"
 uuid = "5ae59095-9a9b-59fe-a467-6f913c188581"
 version = "0.13.1"
+
+[[deps.CommonWorldInvalidations]]
+git-tree-sha1 = "ae52d1c52048455e85a387fbee9be553ec2b68d0"
+uuid = "f70d9fcc-98c5-4d4a-abd7-e4cdeebd8ca8"
+version = "1.0.0"
 
 [[deps.Compat]]
 deps = ["TOML", "UUIDs"]
@@ -1445,6 +1659,29 @@ git-tree-sha1 = "f923f9a774fcf3f5cb761bfa43aeadd689714813"
 uuid = "2e76f6c2-a576-52d4-95c1-20adfe4de566"
 version = "8.5.1+0"
 
+[[deps.HashArrayMappedTries]]
+git-tree-sha1 = "2eaa69a7cab70a52b9687c8bf950a5a93ec895ae"
+uuid = "076d061b-32b6-4027-95e0-9a2c6f6d7e74"
+version = "0.2.0"
+
+[[deps.Hwloc]]
+deps = ["CEnum", "Hwloc_jll", "Printf"]
+git-tree-sha1 = "6a3d80f31ff87bc94ab22a7b8ec2f263f9a6a583"
+uuid = "0e44f5e4-bd66-52a0-8798-143a42290a1d"
+version = "3.3.0"
+
+    [deps.Hwloc.extensions]
+    HwlocTrees = "AbstractTrees"
+
+    [deps.Hwloc.weakdeps]
+    AbstractTrees = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"
+
+[[deps.Hwloc_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "dd3b49277ec2bb2c6b94eb1604d4d0616016f7a6"
+uuid = "e33a78d0-f292-5ffc-b300-72abe9b543c8"
+version = "2.11.2+0"
+
 [[deps.HypergeometricFunctions]]
 deps = ["LinearAlgebra", "OpenLibm_jll", "SpecialFunctions"]
 git-tree-sha1 = "68c173f4f449de5b438ee67ed0c9c748dc31a2ec"
@@ -1468,6 +1705,11 @@ deps = ["Logging", "Random"]
 git-tree-sha1 = "b6d6bfdd7ce25b0f9b2f6b3dd56b2673a66c8770"
 uuid = "b5f81e59-6552-4d32-b1f0-c071b021bf89"
 version = "0.2.5"
+
+[[deps.IfElse]]
+git-tree-sha1 = "debdd00ffef04665ccbb3e150747a77560e8fad1"
+uuid = "615f187c-cbe4-4ef1-ba3b-2fcf58d6d173"
+version = "0.1.1"
 
 [[deps.InitialValues]]
 git-tree-sha1 = "4da0f88e9a39111c2fa3add390ab15f3a44f3ca3"
@@ -1523,6 +1765,12 @@ git-tree-sha1 = "e95866623950267c1e4878846f848d94810de475"
 uuid = "aacddb02-875f-59d6-b918-886e6ef4fbf8"
 version = "3.1.2+0"
 
+[[deps.JuliaInterpreter]]
+deps = ["CodeTracking", "InteractiveUtils", "Random", "UUIDs"]
+git-tree-sha1 = "c47892541d03e5dc63467f8964c9f2b415dfe718"
+uuid = "aa1ae85d-cabe-5617-a682-6adf51b2e16a"
+version = "0.9.46"
+
 [[deps.JuliaVariables]]
 deps = ["MLStyle", "NameResolution"]
 git-tree-sha1 = "49fb3cb53362ddadb4415e9b73926d6b40709e70"
@@ -1575,6 +1823,12 @@ version = "0.16.9"
     SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
     SymEngine = "123dc426-2d89-5057-bbad-38513e3affd8"
     tectonic_jll = "d7dd28d6-a5e6-559c-9131-7eb760cdacc5"
+
+[[deps.LayoutPointers]]
+deps = ["ArrayInterface", "LinearAlgebra", "ManualMemory", "SIMDTypes", "Static", "StaticArrayInterface"]
+git-tree-sha1 = "a9eaadb366f5493a5654e843864c13d8b107548c"
+uuid = "10f19ff3-798f-405d-979b-55457f8fc047"
+version = "0.1.17"
 
 [[deps.LibCURL]]
 deps = ["LibCURL_jll", "MozillaCACerts_jll"]
@@ -1672,6 +1926,12 @@ git-tree-sha1 = "f02b56007b064fbfddb4c9cd60161b6dd0f40df3"
 uuid = "e6f89c97-d47a-5376-807f-9c37f3926c36"
 version = "1.1.0"
 
+[[deps.LoweredCodeUtils]]
+deps = ["JuliaInterpreter"]
+git-tree-sha1 = "39240b5f66956acfa462d7fe12efe08e26d6d70d"
+uuid = "6f1432cf-f94c-5a45-995e-cdbf5db27b0b"
+version = "3.2.2"
+
 [[deps.MIMEs]]
 git-tree-sha1 = "c64d943587f7187e751162b3b84445bbbd79f691"
 uuid = "6c6e2e6c-3030-632d-7369-2d6c69616d65"
@@ -1686,6 +1946,11 @@ version = "0.4.17"
 git-tree-sha1 = "1e0228a030642014fe5cfe68c2c0a818f9e3f522"
 uuid = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
 version = "0.5.16"
+
+[[deps.ManualMemory]]
+git-tree-sha1 = "bcaef4fc7a0cfe2cba636d84cda54b5e4e4ca3cd"
+uuid = "d125e4d3-2237-4719-b19c-fa641b8a4667"
+version = "0.1.8"
 
 [[deps.Markdown]]
 deps = ["Base64"]
@@ -1749,6 +2014,16 @@ deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "b6aa4566bb7ae78498a5e68943863fa8b5231b59"
 uuid = "e7412a2a-1a6e-54c0-be00-318e2571c051"
 version = "1.3.6+0"
+
+[[deps.OhMyThreads]]
+deps = ["BangBang", "ChunkSplitters", "ScopedValues", "StableTasks", "TaskLocalValues"]
+git-tree-sha1 = "e0a1a8b92f6c6538b2763196f66417dddb54ac0c"
+uuid = "67456a42-1dca-4109-a031-0a68de7e3ad5"
+version = "0.8.3"
+weakdeps = ["Markdown"]
+
+    [deps.OhMyThreads.extensions]
+    MarkdownExt = "Markdown"
 
 [[deps.OpenBLAS_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
@@ -1859,6 +2134,18 @@ version = "1.40.19"
     ImageInTerminal = "d8c32880-2388-543b-8c61-d9f865259254"
     Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 
+[[deps.PlutoHooks]]
+deps = ["InteractiveUtils", "Markdown", "UUIDs"]
+git-tree-sha1 = "072cdf20c9b0507fdd977d7d246d90030609674b"
+uuid = "0ff47ea0-7a50-410d-8455-4348d5de0774"
+version = "0.0.5"
+
+[[deps.PlutoLinks]]
+deps = ["FileWatching", "InteractiveUtils", "Markdown", "PlutoHooks", "Revise", "UUIDs"]
+git-tree-sha1 = "8f5fa7056e6dcfb23ac5211de38e6c03f6367794"
+uuid = "0ff47ea0-7a50-410d-8455-4348d5de0420"
+version = "0.1.6"
+
 [[deps.PlutoTeachingTools]]
 deps = ["Downloads", "HypertextLiteral", "Latexify", "Markdown", "PlutoUI"]
 git-tree-sha1 = "85778cdf2bed372008e6646c64340460764a5b85"
@@ -1876,6 +2163,18 @@ deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "Downloads", 
 git-tree-sha1 = "8329a3a4f75e178c11c1ce2342778bcbbbfa7e3c"
 uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 version = "0.7.71"
+
+[[deps.Polyester]]
+deps = ["ArrayInterface", "BitTwiddlingConvenienceFunctions", "CPUSummary", "IfElse", "ManualMemory", "PolyesterWeave", "Static", "StaticArrayInterface", "StrideArraysCore", "ThreadingUtilities"]
+git-tree-sha1 = "6f7cd22a802094d239824c57d94c8e2d0f7cfc7d"
+uuid = "f517fe37-dbe3-4b94-8317-1923a5111588"
+version = "0.7.18"
+
+[[deps.PolyesterWeave]]
+deps = ["BitTwiddlingConvenienceFunctions", "CPUSummary", "IfElse", "Static", "ThreadingUtilities"]
+git-tree-sha1 = "645bed98cd47f72f67316fd42fc47dee771aefcd"
+uuid = "1d0040c9-8b98-4ee7-8388-3f51789ca0ad"
+version = "0.2.2"
 
 [[deps.PrecompileTools]]
 deps = ["Preferences"]
@@ -1989,6 +2288,16 @@ git-tree-sha1 = "62389eeff14780bfe55195b7204c0d8738436d64"
 uuid = "ae029012-a4dd-5104-9daa-d747884805df"
 version = "1.3.1"
 
+[[deps.Revise]]
+deps = ["CodeTracking", "FileWatching", "JuliaInterpreter", "LibGit2", "LoweredCodeUtils", "OrderedCollections", "REPL", "Requires", "UUIDs", "Unicode"]
+git-tree-sha1 = "9bb80533cb9769933954ea4ffbecb3025a783198"
+uuid = "295af30f-e4ad-537b-8983-00126c2a3abe"
+version = "3.7.2"
+weakdeps = ["Distributed"]
+
+    [deps.Revise.extensions]
+    DistributedExt = "Distributed"
+
 [[deps.Rmath]]
 deps = ["Random", "Rmath_jll"]
 git-tree-sha1 = "852bd0f55565a9e973fcfee83a84413270224dc4"
@@ -2004,6 +2313,17 @@ version = "0.5.1+0"
 [[deps.SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 version = "0.7.0"
+
+[[deps.SIMDTypes]]
+git-tree-sha1 = "330289636fb8107c5f32088d2741e9fd7a061a5c"
+uuid = "94e857df-77ce-4151-89e5-788b33177be4"
+version = "0.1.0"
+
+[[deps.ScopedValues]]
+deps = ["HashArrayMappedTries", "Logging"]
+git-tree-sha1 = "c3b2323466378a2ba15bea4b2f73b081e022f473"
+uuid = "7e506255-f358-4e82-b7e4-beb19740aa63"
+version = "1.5.0"
 
 [[deps.Scratch]]
 deps = ["Dates"]
@@ -2071,6 +2391,31 @@ git-tree-sha1 = "95af145932c2ed859b63329952ce8d633719f091"
 uuid = "860ef19b-820b-49d6-a774-d7a799459cd3"
 version = "1.0.3"
 
+[[deps.StableTasks]]
+git-tree-sha1 = "c4f6610f85cb965bee5bfafa64cbeeda55a4e0b2"
+uuid = "91464d47-22a1-43fe-8b7f-2d57ee82463f"
+version = "0.1.7"
+
+[[deps.Static]]
+deps = ["CommonWorldInvalidations", "IfElse", "PrecompileTools"]
+git-tree-sha1 = "f737d444cb0ad07e61b3c1bef8eb91203c321eff"
+uuid = "aedffcd0-7271-4cad-89d0-dc628f76c6d3"
+version = "1.2.0"
+
+[[deps.StaticArrayInterface]]
+deps = ["ArrayInterface", "Compat", "IfElse", "LinearAlgebra", "PrecompileTools", "Static"]
+git-tree-sha1 = "96381d50f1ce85f2663584c8e886a6ca97e60554"
+uuid = "0d7ed370-da01-4f52-bd93-41d350b8b718"
+version = "1.8.0"
+
+    [deps.StaticArrayInterface.extensions]
+    StaticArrayInterfaceOffsetArraysExt = "OffsetArrays"
+    StaticArrayInterfaceStaticArraysExt = "StaticArrays"
+
+    [deps.StaticArrayInterface.weakdeps]
+    OffsetArrays = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
+    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
 [[deps.StaticArrays]]
 deps = ["LinearAlgebra", "PrecompileTools", "Random", "StaticArraysCore"]
 git-tree-sha1 = "cbea8a6bd7bed51b1619658dec70035e07b8502f"
@@ -2126,6 +2471,12 @@ version = "1.5.0"
     ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
     InverseFunctions = "3587e190-3f89-42d0-90ee-14403ec27112"
 
+[[deps.StrideArraysCore]]
+deps = ["ArrayInterface", "CloseOpenIntervals", "IfElse", "LayoutPointers", "LinearAlgebra", "ManualMemory", "SIMDTypes", "Static", "StaticArrayInterface", "ThreadingUtilities"]
+git-tree-sha1 = "83151ba8065a73f53ca2ae98bc7274d817aa30f2"
+uuid = "7792a7ef-975c-4747-a70f-980b88e8d1da"
+version = "0.5.8"
+
 [[deps.StyledStrings]]
 uuid = "f489334b-da3d-4c2e-b8f0-e476e12c162b"
 version = "1.11.0"
@@ -2161,6 +2512,11 @@ deps = ["ArgTools", "SHA"]
 uuid = "a4e569a6-e804-4fa4-b0f3-eef7a1d5b13e"
 version = "1.10.0"
 
+[[deps.TaskLocalValues]]
+git-tree-sha1 = "67e469338d9ce74fc578f7db1736a74d93a49eb8"
+uuid = "ed4db957-447d-4319-bfb6-7fa9ae7ecf34"
+version = "0.1.3"
+
 [[deps.TensorCore]]
 deps = ["LinearAlgebra"]
 git-tree-sha1 = "1feb45f88d133a655e001435632f019a9a1bcdb6"
@@ -2171,6 +2527,12 @@ version = "0.1.1"
 deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
 uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 version = "1.11.0"
+
+[[deps.ThreadingUtilities]]
+deps = ["ManualMemory"]
+git-tree-sha1 = "d969183d3d244b6c33796b5ed01ab97328f2db85"
+uuid = "8290d209-cae3-49c0-8002-c8c24d57dab5"
+version = "0.5.5"
 
 [[deps.ThreadsX]]
 deps = ["Accessors", "ArgCheck", "BangBang", "ConstructionBase", "InitialValues", "MicroCollections", "Referenceables", "SplittablesBase", "Transducers"]
@@ -2604,21 +2966,29 @@ version = "1.9.2+0"
 # ╟─90c9d079-4bbc-4609-aa12-afa41a74b2fb
 # ╟─0edbb2db-4db8-4dc4-9a73-f7ff86e6f577
 # ╟─a944fdea-f41b-4a5f-95ac-e5f4074d4290
+# ╠═b4cbb43d-6e4c-4917-99a4-03d13e736144
+# ╠═5acc645a-0d32-4f51-8aa6-063725b83fa8
+# ╠═af161709-46d2-4c73-b10d-90acb1e85189
+# ╠═1e93928c-7f4c-4295-b755-4e5e16adbd8e
 # ╟─bd81357b-c461-458e-801c-610893dd5ea1
 # ╟─0e0c25d4-35b9-429b-8223-90e9e8be90f9
 # ╠═e55c802d-7923-458f-af42-d951e82e029b
 # ╟─5a63ebd6-3e18-49ee-8d1d-4bb2da6419b6
 # ╠═86e7d984-c128-4d2e-8599-3bc70db87a1d
 # ╟─c69c0a4a-b90b-414c-883d-3aa50c04b5e1
-# ╠═b3a6004f-9d10-4582-832a-8917b701f2ad
+# ╟─3604a697-8f21-447f-bf75-b3af989e9896
+# ╟─b3a6004f-9d10-4582-832a-8917b701f2ad
 # ╟─791041e9-d277-4cac-a5ac-1d6ec52e0287
+# ╠═f272eab0-8a33-4161-bf9e-e378255631dd
+# ╟─d43540d3-beb9-45aa-98cd-1a77f6b8db10
 # ╠═c65aa7b6-d85e-4efa-a2ee-1b615155796e
-# ╠═d1beea61-776f-4841-97e4-8d423ac22820
+# ╟─d1beea61-776f-4841-97e4-8d423ac22820
+# ╠═48b1fc18-eaaf-4f5e-9275-1e942dfbd643
+# ╟─6a09fa9c-f04e-466f-9746-beb2a7cfdfa3
 # ╠═9b734e9c-f571-4a09-9744-221dcd55b4bf
-# ╠═c2c68b93-1cd4-4a38-9dd9-47ce2d591907
+# ╟─c2c68b93-1cd4-4a38-9dd9-47ce2d591907
+# ╟─f9b3f5ce-cfc1-4d59-b21e-2fd07075f036
 # ╟─7c367a0b-c5b9-459b-9ccf-e07c84e0b32a
-# ╟─2b00f6fc-9bfd-48d6-a4d8-ac95f7e71faa
-# ╟─ea002e89-9f4e-441e-8998-5e9c99bb27e0
 # ╟─d43525da-e0a2-4d2f-9dbb-bf187eebf6c1
 # ╟─547ad5ba-06ad-4707-a7ef-e444cf88ae53
 # ╟─7ba35a63-ac61-434b-b759-95d505f62d9e
@@ -2633,11 +3003,13 @@ version = "1.9.2+0"
 # ╟─e36cda69-d300-4156-9bef-a372f94306d9
 # ╟─161ea6af-5661-44e1-ae40-1b581b636c25
 # ╠═1c1ccc51-e32a-4881-b892-095d2be55916
-# ╟─7def3535-6f90-4bf8-b86f-aac278666663
+# ╠═293ad084-6d6a-4401-9819-53a24646d2c9
+# ╠═7def3535-6f90-4bf8-b86f-aac278666663
 # ╠═1989da2a-1fe2-49a0-b279-5925ae4b428c
 # ╟─8d7c27d5-4a07-4ab4-9ece-94fdb7053f73
+# ╠═3231b010-718a-4863-be43-1f0326451e96
 # ╠═b0e08212-7e12-4d54-846f-5b0863c37236
-# ╟─3183c6ac-5acd-4770-a638-c4c6ba3f7c4f
+# ╠═3183c6ac-5acd-4770-a638-c4c6ba3f7c4f
 # ╠═8e9b1e02-2bc0-49d2-b7ed-38de877ebe77
 # ╟─ba62f716-b1b5-4d11-91f2-ed121b48216c
 # ╟─bbdd495c-f2c6-4264-a4e9-5083753eb410
@@ -2646,13 +3018,16 @@ version = "1.9.2+0"
 # ╠═17659ddb-d4e0-4a4b-b34c-8ac52d5dad45
 # ╠═2ef9e7e0-c856-4ef3-a08f-89817fc5fd60
 # ╟─ae47ef38-e8d0-40b9-9e61-3ab3ca7e7a49
+# ╠═ab886349-5f3f-45e9-a6e1-a81fdfafa72f
+# ╠═19052549-3c5d-4b49-b708-05eac0a2a0ac
 # ╟─aad94861-e2b3-417d-b640-b821e53adb23
 # ╠═1778899b-8f05-4b1f-acb5-32af1ace08ee
 # ╠═9e78bfc1-fb4e-4626-b387-c2f83bed6ef0
 # ╟─f1c0321b-7811-42b1-9d0c-9c69f43d7e1a
 # ╠═df044a68-605f-4347-832a-68090ee07950
+# ╠═7eccc74d-9a49-44d9-9e43-cbb3c8ad7ce5
 # ╠═a661d895-d3d7-4e96-a08f-55b125ed1d40
-# ╟─3f01d534-b01d-4ab4-b3cd-e809b02563a9
+# ╠═3f01d534-b01d-4ab4-b3cd-e809b02563a9
 # ╠═d16adf94-72c3-480d-bd92-738e806068f8
 # ╟─56c5b496-a063-459a-8686-22fc70b6a214
 # ╟─c4ff4add-ab3c-4585-900e-41f17e905ac5
@@ -2664,8 +3039,12 @@ version = "1.9.2+0"
 # ╠═bd77bc71-ffdf-4ba1-b1ee-6f2a69044e6f
 # ╠═6f411bcc-7084-43c3-a88b-b56ba77b5732
 # ╠═3c5ee822-b938-4848-b2b0-f0de2e65b4db
+# ╟─35b1b5b1-2a23-44bb-bc19-805393d18d8a
+# ╠═ec08aa84-3f63-441a-a31c-85b7a82412d1
+# ╠═21b3c52e-533f-488f-a2eb-602600b66738
+# ╠═e38e0b91-dbd3-4cc6-87ac-add4953411d1
 # ╟─3b50062c-99c1-4f68-aabe-2d40d4ad7504
-# ╟─d83a282e-cb2b-4837-bfd4-8404b3722e3a
+# ╠═d83a282e-cb2b-4837-bfd4-8404b3722e3a
 # ╟─c9cf6fb3-0146-42e6-aaae-24e97254c805
 # ╠═76730d06-06da-4466-8814-2096b221090f
 # ╠═73358bcf-4129-46be-bef4-f623b11e245b
