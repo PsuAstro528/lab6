@@ -16,13 +16,13 @@ Remember, that you need follow the provided link to create your own private copy
 ## Exercise 1:  [Parallelization for Multi-Core Workstations via Multiple-Threads](https://psuastro528.github.io/lab6/ex1.html)
 ### Goals:
 - Choose an appropriate number of worker processors for your compute node
-- Parallelize code using ThreadsX.map and ThreadsX.mapreduce
 - Parallelize code using Threads.@threads
-- Parallelize code using ThreadsX.foreach
+- Parallelize code using ThreadsX.foreach/OhMyThreads.tforeach
+- Parallelize code using ThreadsX.map/OhMyThreads.tmap 
+- Parallelize code using ThreadsX.mapreduce/OhMyThreads.tmapreduce
 - Parallelize code using FLoops & ThreadedEx
 
 From a Pluto session, work through ex1.jl
-
 
 ## Exercise 2:  [Parallelization for Multi-Core Workstations via Multiple Processes](https://psuastro528.github.io/lab6/ex2.html)
 ### Goals:
