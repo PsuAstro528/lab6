@@ -20,7 +20,7 @@ end
 
 "Evaluate kernel at wavelength(s) x"
 function (kernel::GaussianConvolutionKernel)(x::Number)
-    x < kernel.limit_kernel_width^2 ? kernel.norm*pdf(kernel.dist,x) : zero(x)
+    abs2(x) <= abs2(kernel.limit_kernel_width) ? kernel.norm*pdf(kernel.dist,x) : zero(x)
 end
 
 function (kernel::GaussianConvolutionKernel)(x::A1) where { T1<:Number, A1<:AbstractArray{T1} }
@@ -50,7 +50,7 @@ end
 
 "Evaluate kernel at wavelength(s) x"
 function (kernel::GaussianMixtureConvolutionKernel)(x::Number)
-    abs(x) < kernel.limit_kernel_width ?  kernel.norm*sum(kernel.weights.*pdf.(kernel.dists,x)) : zero(x)
+    abs2(x) < abs2(kernel.limit_kernel_width) ?  kernel.norm*sum(kernel.weights.*pdf.(kernel.dists,x)) : zero(x)
 end
 
 function (kernel::GaussianMixtureConvolutionKernel)(x::AbstractArray{T}) where T<:Number
