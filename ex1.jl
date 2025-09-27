@@ -27,6 +27,7 @@ begin
 	using CpuId, Hwloc
 	using ThreadsX, OhMyThreads, Polyester
 	using FLoops
+	using StructArrays
 	# Packages for benchmarking
 	using BenchmarkTools
 
@@ -42,7 +43,7 @@ end
 # ╔═╡ 85aad005-eac0-4f71-a32c-c8361c31813b
 md"""
 # Lab 6, Exercise 1
-## Parallelization: Shared-memory model, Multi-threading
+## Parallelization: Shared-memory model & Multi-threading
 """
 
 # ╔═╡ bdf61711-36e0-40d5-b0c5-3bac20a25aa3
@@ -59,11 +60,56 @@ In my experience, parallelization via multiple threads tends to be more efficien
 Near the end of this exercise we'll see an example of how a programming interfaces that makes it easy to transition code between multi-threaded and mulit-process models.
 """)
 
-# ╔═╡ 0bee1c3c-b130-49f2-baa4-efd8e3b49fdc
+# ╔═╡ b133064a-d02e-4a71-88d7-e430b80d24b1
 md"""
 ## Hardware & Pluto server configuration
+"""
+
+# ╔═╡ 571cab3f-771e-4464-959e-f351194049e2
+md"""
 Most modern workstations and even laptops have multiple processor cores.
-If you're using the Lynx portal and BYOE JupyterLab server, then you need to request that multiple processor cores be allocated to your session when you first submit the request for the BYOE JupyterLab server using the box labeled "Number of Cores", i.e. before you open this notebook and even before you start your Pluto session.
+Before we get started, let's get some information about the processor that our Pluto server is running on and double check that we're set to use an appropriate number of threads.
+"""
+
+# ╔═╡ 0c775b35-702e-4664-bd23-7557e4e189f4
+with_terminal() do
+	Sys.cpu_summary()
+end
+
+# ╔═╡ 3059f3c2-cabf-4e20-adaa-9b6d0c07184f
+md"""
+If you're running this notebook on your own computer, then we'll want to make sure that we set the number of threads to be no more than the number of processor cores listed above. It's very likely that you might be better off requesting only half the number of processors as listed above. (Many processors present themselves as having more cores than they actually do. For some applications, this can be useful.  For many scientific applications it's better to only use as many threads as physical cores that are avaliable.
+"""
+
+# ╔═╡ 4fa907d0-c556-45df-8056-72041edcf430
+md"""
+The [CpuId.jl](https://github.com/m-j-w/CpuId.jl) package provides some useful functions to query the properties of the processor you're running on.  It provides functions to easily find out the physical capabilities of the computer you're using.
+"""
+
+# ╔═╡ 73e5e40a-1e59-41ed-a48d-7fb99f5a6755
+cpucores()   # query number of physical cores
+
+# ╔═╡ f97f1815-50a2-46a9-ac20-e4a3e34d898c
+cputhreads() # query number of logical cores
+
+# ╔═╡ 53da8d7a-8620-4fe5-81ba-f615d2d4ed2a
+if cpucores() < cputhreads()
+	warning_box(md"""Your processor is presenting itself as having $(cputhreads()) cores, when it really only has $(cpucores()) cores.  I suggest limiting the number of threads to no more than $(cpucores()).  
+	
+	If you're running on Lynx or Roar Collab, then you should also limit the number of threads you use to the number of CPU cores assigned to your job by the slurm workload manager.
+	""")
+end
+
+# ╔═╡ 8df4e8d2-b955-424d-a7ec-264ce2b0e506
+md"""
+Just because you're running on a server with $(cpucores()) cores doesn't mean that you should use them all for yourself.  
+If you're using the Lynx portal and BYOE JupyterLab server, then you should limit the number of threads you use to the number of CPU cores that have been allocated to your job.  
+For this lab, you should request at least threee CPU cores be allocated to your session when you first submit the request for the BYOE JupyterLab server using the box labeled "Number of Cores", i.e. before you open this notebook and even before you start your Pluto session.  I'd suggest asking for 4 CPU cores, so you can notice more significant speed-ups from parallelization.
+"""
+
+# ╔═╡ 826d2312-0803-4c36-bb72-df6d8241910c
+md"""
+We can lookup the parameters for your job using **environment variables**.  In julia, they are accessible using the dictionary, `ENV`.  For example, the environment variable `ENV["SLURM_CPUS_PER_TASK"]` tells us how many CPU cores were allocated for our task.
 """
 
 # ╔═╡ f76f329a-8dde-4790-96f2-ade735643aeb
@@ -89,54 +135,24 @@ if !ismissing(procs_per_node)
 	end		
 end
 
+# ╔═╡ 410b6052-6d6d-4fd8-844e-8941845d8d90
+md"""
+This Pluto notebook has **$(Threads.nthreads()) threads** avaliable for multithreaded computations.
+"""
+
 # ╔═╡ 8a50e9fa-031c-4912-8a2d-466e6a9a9935
 md"""
-This notebook is using **$(Threads.nthreads()) threads**.
+Even when you have a JupyterLab server (or remote desktop or job scheduled by Slurm, PBS or HTCondor) that has been allocated multiple CPU cores, that doesn't mean that any code will make use of more than one core.  For code to make use of those cores, it has to written in a way that indicates which portions of the code may execute in parallel.  This exercise will demonstrate several ways that you can write parallel code.  You don't need to master the syntax for all of them.  As always, the concepts are more important.  When it comes time to write parallel code for your project, then you can come back here to remind yourself of the syntax specific to whichever package you are using to express your parallel computations.
 """
 
 # ╔═╡ 7df5fc86-889f-4a5e-ac2b-8c6f68d7c32e
-warning_box(md"""
-Even when you have a JupyterLab server (or remote desktop or Slurm or PBS job) that has been allocated multiple CPU cores, that doesn't mean that any code will make use of more than one core.  The Lynx Portal's Pluto server for this class has been configured to start notebooks with as many threads as physical cores that were allocated to the parent job.
+warning_box(md"""The Lynx Portal's Pluto server for this class has been configured to start notebooks with as many threads as physical cores that were allocated to the parent job.  
 
-If you start julia manually (e.g., from the command line or remote desktop), then you should check that its using the desired number of threads.  The number can be can control using either the `JULIA_NUM_THREADS` environment variable or the `-t` option on the command line.  Somewhat confusingly, even if you start julia using multiple threads, that doesn't mean that the Pluto server will assign that many threads to each notebook.  If you run your own Pluto server, then you can control the number of threads used within a notebook by starting it with
+However, if you start julia manually (e.g., from the command line or remote desktop), then you should check that its using the desired number of threads.  You can control this by either setting the `JULIA_NUM_THREADS` environment variable before your start julia or by adding the `-t` option on the command line when you start julia.  Somewhat confusingly, even if you start julia using multiple threads, that doesn't mean that the Pluto server will assign that many threads to each notebook.  If you run your own Pluto server, then you can control the number of threads used within a notebook by starting it with
 ```julia
 using Pluto
 Pluto.run(threads=4)
 ```""")
-
-# ╔═╡ 571cab3f-771e-4464-959e-f351194049e2
-md"""
-Before we get started, let's get some information about the processor that our server is running on and double check that we're set to use an appropriate number of threads.
-"""
-
-# ╔═╡ 0c775b35-702e-4664-bd23-7557e4e189f4
-with_terminal() do
-	Sys.cpu_summary()
-end
-
-# ╔═╡ 3059f3c2-cabf-4e20-adaa-9b6d0c07184f
-md"""
-If you're running this notebook on your own computer, then we'll want to make sure that we set the number of threads to be no more than the number of processor cores listed above. It's very likely that you might be better off requesting only half the number of processors as listed above. (Many processors present themselves as having more cores than they actually do. For some applications, this can be useful.  For many scientific applications it's better to only use as many threads as physical cores that are avaliable.
-"""
-
-# ╔═╡ 4fa907d0-c556-45df-8056-72041edcf430
-md"""
-The [CpuId.jl](https://github.com/m-j-w/CpuId.jl) package provides some useful functions to query the properties of the processor you're running on.
-"""
-
-# ╔═╡ 73e5e40a-1e59-41ed-a48d-7fb99f5a6755
-cpucores()   # query number of physical cores
-
-# ╔═╡ f97f1815-50a2-46a9-ac20-e4a3e34d898c
-cputhreads() # query number of logical cores
-
-# ╔═╡ 53da8d7a-8620-4fe5-81ba-f615d2d4ed2a
-if cpucores() < cputhreads()
-	warning_box(md"""Your processor is presenting itself as having $(cputhreads()) cores, when it really only has $(cpucores()) cores.  I suggest limiting the number of threads to $(cpucores()).  
-	
-	If you're running on Lynx or Roar Collab, then you should also limit the number of threads you use to the number of CPU cores assigned to your job by the slurm workload manager.
-	""")
-end
 
 # ╔═╡ cc1418c8-3261-4c70-bc19-2921695570a6
 Threads.nthreads()  # Number of threads avaliable to this Pluto notebook
@@ -148,7 +164,7 @@ Threads.nthreads()  # Number of threads avaliable to this Pluto notebook
  @test !ismissing(procs_per_node) && 1 <= Threads.nthreads() <= procs_per_node
 
 # ╔═╡ 907766c5-f084-4ddc-bb52-336cb037d521
-md"1a.  How many threads is your notebook using?  (Please enter it as an integer rather than a function call, so that it gets stored in your notebook.  That way the TA and I will be able to interpret the speed-up factors you get below.)"
+md"1a.  How many threads is your notebook using?  (Please enter it as an integer rather than a function call, so that it gets stored in your notebook.  That way the TA and instructor will be able to interpret the speed-up factors you get below.)"
 
 # ╔═╡ 0bcde4df-1e31-4774-a31f-bd451bb6f758
 response_1a = missing # Insert response as simple integer, and not as a variable for function
@@ -214,7 +230,7 @@ end;
 md"## Convolved spectrum
 
 Next, we will create an object containing a model for the point spread function (implemented as a mixture of multiple Gaussians).
-Then we create a funtor that can compute the convolution of our spectral model with the point spread function model.
+Then we create a [functor](https://docs.julialang.org/en/v1/manual/methods/#Function-like-objects) that can compute the convolution of our spectral model with the point spread function model.
 "
 
 # ╔═╡ 324a9a25-1ec4-4dc2-a7ca-e0f1f56dbf66
@@ -225,7 +241,7 @@ Before going further, it's probably useful to plot both the raw spectrum and the
 
 # ╔═╡ 52127f57-9a07-451a-bb24-c1f3c5581f0a
 begin 	# You may want to adjust the num_lambda to make things more/less computationally intensive
-	num_lambda = 4*1024
+	num_lambda = 16*1024
 	lambdas = range(lambda_min,stop=lambda_max, length=num_lambda)
 	lambdas = collect(lambdas) # to make an actual array
 end;
@@ -282,7 +298,7 @@ As expected, the different versions perform very similarly in terms of wall-cloc
 md"""
 ## Benchmarking convolved spectrum
 
-Next, we'll evaluate the convolution of the raw spectrum with the PDF model at each of the wavelengths, using `conv_spectrum`.
+Next, we'll evaluate the convolution of the raw spectrum with the PSF model at each of the wavelengths, using `conv_spectrum`.
 """
 
 # ╔═╡ 51adffd7-8fb6-4ed2-8510-303a37d6efc3
@@ -306,8 +322,9 @@ In principle, we could further optimize the serial version to avoid unnecessary 
 md"""
 ## Map
 Our calculation is one example of a very useful programming pattern, known as **map**.  The map pattern corresponds to problems where the total work can be organized as doing one smaller calculation many times with different input values.
-Julia provides a [`map`](https://docs.julialang.org/en/v1/base/collections/#Base.map) function (as well as `map!` for writing to memory that's been preallocated ) that can be quite useful.
+Julia provides a [`map`](https://docs.julialang.org/en/v1/base/collections/#Base.map) function that can be quite useful.
 `map(func,collection)` applies func to every element of the collection and returns a collection similar in size to collection.
+There is also a `map!` function for writing the results into memory that's been preallocated.
 In our example, each input wavelength is mapped to our output flux.
 """
 
@@ -315,6 +332,13 @@ In our example, each input wavelength is mapped to our output flux.
 md"""
 As expected, the map versions perform very similarly in terms of wall-clock time and memory allocated to the broadcasted versions for both the raw and convolved spectra.
 """
+
+# ╔═╡ 21f305db-24e1-47d1-b1f4-be04ca91780e
+protip(md"""
+It is possible to have each function return an array.  Then the output is an array of arrays.  In that case we could use `stack` to return a 2-d array. 
+
+However, if each function returns a NamedTuple (or a custom struct), then then the output of `map` is an array of NamedTuples (or an array of structs).  
+These can be converted into a `StructArray` using the [StructArrays.jl](https://juliaarrays.github.io/StructArrays.jl/stable/) package or a DataFrame using the [DataFrames.jl](https://dataframes.juliadata.org/latest/) package.  However, sometimes getting the outputs into a format we want to use for subsequent calculations (e.g., arrays for each output, rather than an array of structs) is often a bit of a hassle and more error prone than just writing our code in terms of either a `for` loop or a broadcasted function.""")
 
 # ╔═╡ e71cede9-382e-47e2-953a-2fa96ed50002
 md"## Loop (serial)"
@@ -324,44 +348,29 @@ md"""
 Sometimes it's cumbersome to write code in terms of `map` functions.  For example, you might be computing multiple quantities during one pass of your data (e.g., calculating a sample variance in lab 1).  In these cases, it's often more natural to write your code as a `for` loop.
 """
 
-# ╔═╡ 21f305db-24e1-47d1-b1f4-be04ca91780e
-protip(md"""
-It is possible to have each function return an array.  Then the output is an array of arrays.  In that case we could use `stack` to return a 2-d array. 
-
-However, if each function returns a NamedTuple (or a custom struct), then then the output of `map` is an array of NamedTuples (or an array of structs).  However, getting the outputs in the format we want to use for subsequent calculations (e.g., arrays for each output, rather than an array of structs) is often more tedious and error prone than just writing our code in terms of either a `for` loop or a broadcasted function.""")
-
 # ╔═╡ a44a3478-541d-40d6-9d99-04b918c16bfb
 md"""We'll implement a serial version as a starting point and comparison.
 """
 
 # ╔═╡ 96914ff8-56c8-4cc8-96bc-fd3d13f7e4ce
-md"As expected the performance is very similar to the broadcasted for mappeed version."
+md"As expected the performance is very similar to the versions using broadcasting or `map`."
 
 # ╔═╡ 32685a28-54d9-4c0d-8940-e82843d2cab2
 md"# Parallelization via multiple threads"
 
 # ╔═╡ 3717d201-0bc3-4e3c-8ecd-d835e58f6821
 md"""
-Julia has native support for using multiple **threads**.  This is useful when you have one computer with multiple processor cores.  Then each thread can execute on a separate processor core.  Because the threads are part of the same **process**, every thread has access to all the memory used by every other thread.  Programming with threads requires being careful to avoid undefined behavior because threads read and write to the same memory location in an unexpected order.  In general, multi-threaded programming can be intimidating, since arbitrary parallel code is hard to write, read, debug and maintain.  One way to keep things managable is to stick with some common programming patterns which are relatively easy to work with.  We'll explore using threads for a parallel for and a parallel map.
-"""
-
-# ╔═╡ 496e8c5e-251b-4448-8c59-541877d752c1
-md"""
-## Parallel Map
-
-If you can write your computations in terms of calling `map`, then one easy way to parallelize your code is to replace the call to `map` with a call to `ThreadsX.map`, a parallel map that makes use of multiple threads.
-If your julia kernel has only a single thread, then it will still run in serial.  But if you have multiple theads, then `ThreadsX.map` will parallelize your code.
+Julia has native support for using multiple **threads**.  This is useful when you have one computer with multiple processor cores.  Then each thread can execute on a separate processor core.  Because the threads are part of the same **process**, every thread has access to all the memory used by every other thread.  Programming with threads requires being careful to avoid undefined behavior because threads read and write to the same memory location in an unexpected order.  In general, multi-threaded programming can be intimidating, since arbitrary parallel code is hard to write, read, debug and maintain.  One way to keep things managable is to stick with some common programming patterns which are relatively easy to work with.  In this exercise, we'll explore using multi-threadding for a parallel for loop, parallel map, parallel reduce, and parallel mapreduce.
 """
 
 # ╔═╡ 04bcafcd-1d2f-4ce5-893f-7ec5bb05f9ed
 md"""
-1a.  Given that this notebook is using $(Threads.nthreads()) threads, what is the theoretical maximum improvement in performance?  How much faster do you expect the `conv_spectrum` code to run using `ThreadsX.map` relative to serial `map`?
-"""
+1b.  Given that this notebook is using $(Threads.nthreads()) threads, what is the theoretical maximum improvement in the performance of calculating the spectrum when using multi-threading relative to calculatingi the spectrum in serial?  """
 
 # ╔═╡ ca8ceb27-86ea-4b90-a1ae-86d794c9fc98
-response_1b = "" # missing  # md"Insert your responce"
+response_1b = missing  # md"Insert your responce"
 
-# ╔═╡ 4ad081a2-b5c2-48ff-9a28-ec9c8d9f0d0e
+# ╔═╡ 8b61fca1-2f89-4c74-bca8-c6cc70ba62ad
 begin
     if !@isdefined(response_1b)
 		var_not_defined(:response_1b)
@@ -370,89 +379,27 @@ begin
 	end
 end
 
-# ╔═╡ 2399ce76-b6da-4a61-bcda-aee22dd275f8
-md"""
-1c. How did the performance improvement compare to the theoretical maximum speed-up factor and your expectations?
-"""
-
-# ╔═╡ a25c6705-54f4-4bad-966e-a8f13ae4c711
-response_1c = "" #missing  # md"Insert your responce"
-
-# ╔═╡ 739136b1-6b01-44c0-bbfd-dcb490d1e191
-begin
-    if !@isdefined(response_1c)
-		var_not_defined(:response_1c)
-    elseif ismissing(response_1c)
-    	still_missing()
-	end
-end
-
-# ╔═╡ dcce9a84-a9b1-47c1-8e08-7575cb299b56
-md"""
-You were likely a little disappointed in the speed-up factor.  What could have gone wrong?  In this case, we have a non-trivial, but still modest amount of work to do for each wavelength.  `map` distributed the work one element at a time.  The overhead in distributing the work and assembling the pieces likely ate into the potential performance gains.  To improve on this, we can tell `map` to distribute the work in batches.  Below, we'll specify an optional named parameter, `basesize`.  (Feel free to try chaning the size of batches to see how that affects the runtime.)
-"""
-
-# ╔═╡ fb063bc5-22bc-4b32-8fcb-5fbc4765c8b5
-batchsize_for_ThreadsXmap = 256
-
-# ╔═╡ 90c9d079-4bbc-4609-aa12-afa41a74b2fb
-md"""
-1d.  After specifying a batchsize, how much faster was the code using `ThreadsX.map` with batches than the the serial version?  How does this compare to the theoretical maximum speed-up factor and your original expectations? 
-"""
-
-# ╔═╡ 0edbb2db-4db8-4dc4-9a73-f7ff86e6f577
-response_1d = missing  # md"Insert your responce"
-
-# ╔═╡ a944fdea-f41b-4a5f-95ac-e5f4074d4290
-begin
-    if !@isdefined(response_1d)
-		var_not_defined(:response_1d)
-    elseif ismissing(response_1d)
-    	still_missing()
-	end
-end
-
-# ╔═╡ b4cbb43d-6e4c-4917-99a4-03d13e736144
-chunksize_for_onmythreads = 256
-
 # ╔═╡ bd81357b-c461-458e-801c-610893dd5ea1
 md"## Parallel Loop"
 
 # ╔═╡ 0e0c25d4-35b9-429b-8223-90e9e8be90f9
 md"""
-It is also possible to parallelize for loops using multiple threads.  Julia's built-in `Threads` module provides one implementation.
+It is possible to parallelize for loops using multiple threads.  Julia's built-in `Threads` module provides one implementation.
 """
-
-# ╔═╡ 5a63ebd6-3e18-49ee-8d1d-4bb2da6419b6
-md"""
-1e.  How much faster do you expect the `conv_spectrum` code to run using `Threads.@threads for...` relative to searial `for`?
-"""
-
-# ╔═╡ 86e7d984-c128-4d2e-8599-3bc70db87a1d
-response_1e = "" #missing # md"Insert your response"
-
-# ╔═╡ c69c0a4a-b90b-414c-883d-3aa50c04b5e1
-begin
-    if !@isdefined(response_1e)
-		var_not_defined(:response_1e)
-    elseif ismissing(response_1e)
-    	still_missing()
-	end
-end
 
 # ╔═╡ 3604a697-8f21-447f-bf75-b3af989e9896
 md"""
-Once you've made your prediction, we'll time `calc_spectrum_threaded_for_loop`.
+Now, we'll time `calc_spectrum_threaded_for_loop` to compare to the serial version and theoretical maximum improvement.
 """
 
 # ╔═╡ 791041e9-d277-4cac-a5ac-1d6ec52e0287
 md"""
-While Threads.@threads can be useful for some simple tasks, there is active development of packages that provide additional features for multi-threaded programming.  For example, the [ThreadsX.jl](https://github.com/tkf/ThreadsX.jl) packageprovides a `foreach` function, the [OhMyThreads.jl](https://juliafolds2.github.io/OhMyThreads.jl/stable/) packages provides a `tforeach` and the FLoops package provides a `@floop` macro, each of which I demonstrate below.
+While Threads.@threads can be useful for some simple tasks, there is active development of packages that provide additional high-level functions and macros to make multi-threaded programming easier.  For example, the [ThreadsX.jl](https://github.com/tkf/ThreadsX.jl) packageprovides a `foreach` function, the [OhMyThreads.jl](https://juliafolds2.github.io/OhMyThreads.jl/stable/) packages provides a `tforeach`, the [Polyester.jl](https://github.com/JuliaSIMD/Polyester.jl) package provides a `@batch` macro, and the FLoops package provides a `@floop` macro. I'll demonstrate each below.
 """
 
 # ╔═╡ f9b3f5ce-cfc1-4d59-b21e-2fd07075f036
 md"""
-At first, it may seem like the above examples are just alternative syntaxes for writing a loop parallelized over multiple threads.  Each packages to help you parallel code efficiently is optimized for different circumstances and considerations. For now, I just wanted to demonstrate the syntax of each in case it would be useful to you for your project.  
+At first, it may seem like the above examples are just alternative syntaxes for writing a loop parallelized over multiple threads.  Each package has made slightly different implementation choices optimized for different circumstances and considerations.  For now, I just wanted to demonstrate the syntax of each in case it would be useful to you for your project.  
 """
 
 # ╔═╡ 7c367a0b-c5b9-459b-9ccf-e07c84e0b32a
@@ -463,12 +410,105 @@ Inevitably, one package/pattern for parallelizing your code will be a little mor
 
 [`OhMyThreads.jl`](https://juliafolds2.github.io/OhMyThreads.jl/stable/) provides very similar syntax with just slightly different names.  It's also being actively developed and improved.  One distinguishing features is that it aims to allow nested threaded operations to result in good performance.  If I had to recommend just one package for multi-threading this is what I'd currently  recommend.   
 
-In terms of raw performance, [Polyester.jl](https://github.com/JuliaSIMD/Polyester.jl) appears to be the fastest at the moment, particularly for loops that have little computation.  However, it can only uses a static schedule. Therefore, nested parallel loops don't work well with Polyester.
+In terms of raw performance, [`Polyester.jl`](https://github.com/JuliaSIMD/Polyester.jl) appears to be the fastest at the moment, particularly for loops that have little computation.  However, it can only uses a static schedule. Therefore, nested parallel loops don't work well with Polyester.
 
-While [FLoops.jl](https://github.com/JuliaFolds/FLoops.jl) requires a somewhat different syntax, it can makes it easier to swap between multiple forms of parallelism.  Therefore, writing your code so it can be multi-threaded using FLoops is likely to make it very easy to parallelize your code for a distributed memory architecture.  FLoops can even make it easy to parallelize codes using a GPU.  
+While [`FLoops.jl`](https://github.com/JuliaFolds/FLoops.jl) requires a somewhat different syntax, it can makes it easier to swap between multiple forms of parallelism.  Therefore, writing your code so it can be multi-threaded using FLoops is likely to make it very easy to parallelize your code for a distributed memory architecture.  FLoops can even make it easy to parallelize codes using a GPU.  
 
 It's worth keeping these tradeoffs in mind when planning your project.  
 """)
+
+# ╔═╡ 496e8c5e-251b-4448-8c59-541877d752c1
+md"""
+## Parallel Map
+
+If you can write your computations in terms of calling **`map`**, then one easy way to parallelize your code is to replace the call to `map` with a call to a parallel map that makes use of multiple threads, such as `ThreadsX.map` or `OhMyThreads.tmap`.
+If your julia kernel has only a single thread, then it will still run in serial.  But if you have multiple theads, then `ThreadsX.map` or `OhMyThreads.tmap` will parallelize your code.
+"""
+
+# ╔═╡ 263e96b7-e659-468d-ba97-ca9832f6ea4d
+md"""
+**Q1c:**  How much faster do you expect the `conv_spectrum` code to run when using map with multiple threads relative to the serial version?
+"""
+
+# ╔═╡ 86e7d984-c128-4d2e-8599-3bc70db87a1d
+response_1c = missing # md"Insert your response"
+
+# ╔═╡ c69c0a4a-b90b-414c-883d-3aa50c04b5e1
+begin
+    if !@isdefined(response_1c)
+		var_not_defined(:response_1c)
+    elseif ismissing(response_1c)
+    	still_missing()
+	end
+end
+
+# ╔═╡ 4ad081a2-b5c2-48ff-9a28-ec9c8d9f0d0e
+begin
+    if !@isdefined(response_1c)
+		var_not_defined(:response_1c)
+    elseif ismissing(response_1c)
+    	still_missing()
+	end
+end
+
+# ╔═╡ 2399ce76-b6da-4a61-bcda-aee22dd275f8
+md"""
+1d. How did the performance improvement compare to the theoretical maximum speed-up factor and your expectations?
+"""
+
+# ╔═╡ a25c6705-54f4-4bad-966e-a8f13ae4c711
+response_1d = missing  # md"Insert your responce"
+
+# ╔═╡ 739136b1-6b01-44c0-bbfd-dcb490d1e191
+begin
+    if !@isdefined(response_1d)
+		var_not_defined(:response_1d)
+    elseif ismissing(response_1d)
+    	still_missing()
+	end
+end
+
+# ╔═╡ dcce9a84-a9b1-47c1-8e08-7575cb299b56
+md"""
+Depending on the computer being used, you might be a little disappointed in the speed-up factor for one or both of those calls.  What could have gone wrong?
+"""
+
+# ╔═╡ bd185f74-d666-42b4-8da1-c768217f7782
+hint(md"""  In this case, we have a non-trivial, but still modest amount of work to do for each wavelength.  `map` distributed the work one element at a time.  The overhead in distributing the work and assembling the pieces likely ate into the potential performance gains.  To improve on this, we can tell `map` to distribute the work in batches.  Below, we'll specify an optional named parameter (e.g., `basesize` or `chucksize` depending on the library).  (Feel free to try chaning the size of batches to see how that affects the runtime.)""")
+
+# ╔═╡ 2c9cf709-9bc8-48bf-9e19-db8cf7c8690b
+md"""
+Let's try adjusting the size of each batch of wavelength processes within one task.
+"""
+
+# ╔═╡ b4cbb43d-6e4c-4917-99a4-03d13e736144
+chunksize_for_onmythreads = 4
+
+# ╔═╡ fb063bc5-22bc-4b32-8fcb-5fbc4765c8b5
+batchsize_for_ThreadsXmap = 4
+
+# ╔═╡ 90c9d079-4bbc-4609-aa12-afa41a74b2fb
+md"""
+1e.  After specifying the size of each batch or chunk of work, did either the `OhMyThreads.tmap` and `ThreadsX.map` perform noticably better than when using a their default behavior?  How does the speed up using a batch or chunk size larger than 1 compare to the theoretical maximum speed-up factor?   
+"""
+
+# ╔═╡ 0edbb2db-4db8-4dc4-9a73-f7ff86e6f577
+response_1e = missing  # md"Insert your responce"
+
+# ╔═╡ a944fdea-f41b-4a5f-95ac-e5f4074d4290
+begin
+    if !@isdefined(response_1e)
+		var_not_defined(:response_1e)
+    elseif ismissing(response_1e)
+    	still_missing()
+	end
+end
+
+# ╔═╡ eb57f7bb-1bff-471f-a599-d1d7d8f771ad
+md"""
+
+The results to the question above will depend on details like the type of CPU being used and number of CPU cores and threads in use.  Before starting large calculations, its good to test the effects of parameters like `basesize` or `chunksize` with the specific hardware and configuration parameters that you'll be using for your big runs.
+"""
 
 # ╔═╡ d43525da-e0a2-4d2f-9dbb-bf187eebf6c1
 tip(md"""
@@ -503,23 +543,24 @@ md"""
 Now we'll write a version of the function using a serial for loop.  Note that we no longer need to allocate an output array, since `calc_mse_loop` only needs to return the reduced mean squared error and not the value of the spectrum at every wavelength.
 """
 
-# ╔═╡ 161ea6af-5661-44e1-ae40-1b581b636c25
+# ╔═╡ 8f56a866-a141-4275-9769-957ed5834afe
 md"""
-## Parallel loop with reduction
-Next, we'll use [FLoops.jl](https://github.com/JuliaFolds/FLoops.jl) to compute the mean sequared error using multiple threads.  Note that we need to use the `@floop` macro around the loop  *and* the `@reduce` macro to indicate which variables are part of the reduction.
+## Parallel loop with separate reduction
 """
 
-# ╔═╡ 7def3535-6f90-4bf8-b86f-aac278666663
+# ╔═╡ cf2938cc-d3f0-4077-9262-3d51866df2cf
 md"""
-1f.  How do you expect the walltime of `calc_mse_flloop` to compare to the wall times of `calc_mse_loop`?
-
-**OR**  # TODO DECIDE WHICH TO KEEP
-
-How do you expect the walltime of `calc_mse_ohmythreads` to compare to the wall times of `calc_mse_loop`?
+First, we'll try applying a parallel map followed by a parallel reduce.
 """
 
-# ╔═╡ 1989da2a-1fe2-49a0-b279-5925ae4b428c
-response_1f = "" #missing # md"Insert your response"
+# ╔═╡ bd75a60b-ca34-4211-ac35-8325102cff68
+md"""
+**Q1f:** How did the performance of `calc_mse_ohmythreads_map_reduce_separate` compare to the serial versions above?  How does this ratio compare to the theoretical maximum speed-up factor?
+
+"""
+
+# ╔═╡ 5f379c7a-9713-45f7-9a5e-57b8197332c3
+response_1f = missing # md"Insert your response"
 
 # ╔═╡ 8d7c27d5-4a07-4ab4-9ece-94fdb7053f73
 begin
@@ -530,8 +571,22 @@ begin
 	end
 end
 
+# ╔═╡ 161ea6af-5661-44e1-ae40-1b581b636c25
+md"""
+## Parallel loop with simulatenous reduction 
+Next, we'll use parallel loop macros to compute the mean sequared error using multiple threads.  
+When using [FLoops.jl](https://github.com/JuliaFolds/FLoops.jl), we need to use the `@floop` macro around the loop  *and* the `@reduce` macro to indicate which variables are part of the reduction.
+
+When using [OhMyThreads.jl](), we need to use the `@tasks` macro around the loop and the `@set reducer` instructions inside the loop.  We also use the `@local` macro to specify that some variables can be allocated a single time per thread rather than once per itteration.
+"""
+
+# ╔═╡ 3183c6ac-5acd-4770-a638-c4c6ba3f7c4f
+md"""
+**Q1g:**  How did the performance of `calc_mse_flloop` or `calc_mse_ohmythreads` to the performance of the serial versions (e.g., `calc_mse_loop` or `calc_mse_broadcasted`)?   How does that compare to the theoretical maximum speed-up.
+"""
+
 # ╔═╡ 8e9b1e02-2bc0-49d2-b7ed-38de877ebe77
-response_1g = missing # md"Insert your response"
+response_1g = missing  # md"Insert your response"
 
 # ╔═╡ ba62f716-b1b5-4d11-91f2-ed121b48216c
 begin
@@ -544,13 +599,13 @@ end
 
 # ╔═╡ bbdd495c-f2c6-4264-a4e9-5083753eb410
 md"""
-One advantage of parallelizing your code with [FLoops.jl](https://juliafolds.github.io/FLoops.jl/dev/) is that it then becomes very easy to compare the performance of a calculation in serial and in parallel using different **[executors](https://juliafolds.github.io/FLoops.jl/dev/tutorials/parallel/#tutorials-executor)** that specify how the calculation should be implemented.  There are different parallel executor for shared-memory parallelism (via multi-threading this exercise), distributed-memory parallelism (see [Lab 7](https://github.com/PsuAstro528/lab7)) and even for parallelizing code over a GPUs (although there are some restrictions on what code can be run on the GPU, that we'll see in a [Lab 8](https://github.com/PsuAstro528/lab8)).
+One advantage of parallelizing your code with [FLoops.jl](https://juliafolds.github.io/FLoops.jl/dev/) is that it then becomes very easy to compare the performance of a calculation in serial and in parallel using different **[executors](https://juliafolds.github.io/FLoops.jl/dev/tutorials/parallel/#tutorials-executor)** that specify how the calculation should be implemented.  There are different parallel executor for shared-memory parallelism (via multi-threading this exercise), distributed-memory parallelism and even for parallelizing code over a GPUs (although there are some restrictions on what code can be run on the GPU, that we'll see in a [Lab 8](https://github.com/PsuAstro528/lab8)).
 """
 
 # ╔═╡ 383aa611-e115-482e-873c-4487e53d457f
 md"# Mapreduce
 
-We can combine `map` and `reduce` into one function `mapreduce`.  There are opportunities for some increased efficiencies when merging the two, since the amount of communications between threads can be significantly decreased thanks to the reduction operator.  Mapreduce is a common, powerful and efficient programming pattern.  For example, we often want to evaluate a model for many input values, compare the results of the model to data and the compute some statistic about how much the model and data differ.
+We can combine `map` and `reduce` into one function **`mapreduce`**.  There are opportunities for some increased efficiencies when merging the two, since the amount of communications between threads can be significantly decreased thanks to the reduction operator.  Mapreduce is a common, powerful and efficient programming pattern.  For example, we often want to evaluate a model for many input values, compare the results of the model to data and the compute some statistic about how much the model and data differ.
 
 In this exercise, we'll demonstrate using `mapreduce` for calculating the mean squared error between the model and the model Doppler shifted by a velocity, $v$.  First, we'll
 "
@@ -558,12 +613,20 @@ In this exercise, we'll demonstrate using `mapreduce` for calculating the mean s
 # ╔═╡ 2c6fa743-3dec-417b-b05a-17bb52b5d39d
  md"## Mapreduce (serial)"
 
+# ╔═╡ ac1ffdbf-de6f-48cd-af7c-99528ef26dc0
+md"""
+**Q1h:** How does the performance of `calc_mse_mapreduce` compare to the performance of `calc_mse_loop` (or `calc_mse_broadcasted`)?
+"""
+
+# ╔═╡ e331d501-71ed-4d93-8498-5c1193776865
+response_1h = missing
+
 # ╔═╡ ae47ef38-e8d0-40b9-9e61-3ab3ca7e7a49
 md"## Parallel mapreduce"
 
 # ╔═╡ aad94861-e2b3-417d-b640-b821e53adb23
 md"""
-The ThreadsX package provides a multi-threaded version of mapreduce that we can easily drop in.
+The OhMyThreads and ThreadsX packages provide multi-threaded versions of mapreduce that we can easily drop in.
 """
 
 # ╔═╡ f1c0321b-7811-42b1-9d0c-9c69f43d7e1a
@@ -572,29 +635,36 @@ Similar to before, we may be able to reduce the overhead associated with distrib
 """
 
 # ╔═╡ df044a68-605f-4347-832a-68090ee07950
-mapreduce_batchsize = 8
+mapreduce_batchsize = 16
 
 # ╔═╡ 3f01d534-b01d-4ab4-b3cd-e809b02563a9
 md"""
-1h.  How did the performance of `calc_mse_mapreduce_threadsx` or `calc_mse_mapreduce_ohmythreads` compare to the performance of `calc_mse_map_mapreduce`?  
-Can you explain why this differs from the comparison of `calc_spectrum_mapreduce_threadsx` to `ThreadsX.map(conv_spectrum,lambdas,..)`?
+**Q1i:**  How did the performance of `calc_mse_mapreduce_threadsx` or `calc_mse_mapreduce_ohmythreads` compare to the performance of `calc_mse_loop`?  
+Were the speed-up facotrs larger than when performing parallel map-type operations?  
+Why?  
+Can you explain why the batchsize had a bigger effect for the mapreduce calculations than for the map operations?
 """
 
 # ╔═╡ d16adf94-72c3-480d-bd92-738e806068f8
-response_1h = missing # md"Insert your response"
+response_1i = missing #= md"""
+Insert your
+multi-line
+response
+"""
+=#
 
 # ╔═╡ 56c5b496-a063-459a-8686-22fc70b6a214
 begin
-    if !@isdefined(response_1h)
-		var_not_defined(:response_1h)
-    elseif ismissing(response_1h)
+    if !@isdefined(response_1i)
+		var_not_defined(:response_1i)
+    elseif ismissing(response_1i)
     	still_missing()
 	end
 end
 
 # ╔═╡ c4ff4add-ab3c-4585-900e-41f17e905ac5
 md"""
-1i.  Think about how you will parallelize your class project code.  The first parallelization typically uses a shared-memory model.  Which of these programming patterns would be a good fit for your project?  Can your project calculation be formulated as a `map` or `mapreduce` problem?  If not, then could it be implemented as a series of multiple maps/reductions/mapreduces?
+**Q1j:**  Think about how you will parallelize your class project code.  The first parallelization typically uses a shared-memory model.  Which of these programming patterns would be a good fit for your project?  Can your project calculation be formulated as a `map` or `mapreduce` problem?  If not, then could it be implemented as a series of multiple maps/reductions/mapreduces?
 
 Which of the parallel programming strategies are well-suited for your project?
 
@@ -603,7 +673,7 @@ After having worked through this lab, do you anticipate any barriers to applying
 """
 
 # ╔═╡ ac18f1ca-0f60-4436-9d8a-797b3dfd8657
-response_1i = missing  #= md"""
+response_1j = missing  #= md"""
 Insert your
 multi-line
 response
@@ -612,9 +682,9 @@ response
 
 # ╔═╡ e8082779-143d-4562-81f3-d493679cf3c7
 begin
-    if !@isdefined(response_1i)
-		var_not_defined(:response_1i)
-    elseif ismissing(response_1i)
+    if !@isdefined(response_1j)
+		var_not_defined(:response_1j)
+    elseif ismissing(response_1j)
     	still_missing()
 	end
 end
@@ -625,22 +695,8 @@ begin
     σ_obs2 = 0.02*ones(size(lambdas))
 end;
 
-# ╔═╡ 35b1b5b1-2a23-44bb-bc19-805393d18d8a
-md"""
-#### Extra information about your hardware
-"""
-
-# ╔═╡ ec08aa84-3f63-441a-a31c-85b7a82412d1
-Hwloc.topology_info()
-
-# ╔═╡ 21b3c52e-533f-488f-a2eb-602600b66738
-Hwloc.cachesize()
-
-# ╔═╡ e38e0b91-dbd3-4cc6-87ac-add4953411d1
-Hwloc.cachelinesize()
-
 # ╔═╡ 3b50062c-99c1-4f68-aabe-2d40d4ad7504
-md"## Helper code"
+md"# Helper code"
 
 # ╔═╡ d83a282e-cb2b-4837-bfd4-8404b3722e3a
 WidthOverDocs()
@@ -674,15 +730,8 @@ function make_spectrum_object(;lambda_min = 4500, lambda_max = 7500, flux_scale 
 end
 
 # ╔═╡ 86b8dd31-1261-4fb9-bfd3-13f6f01e7790
-# Create a functor (function object) that computes a model spectrum that we'll analyze below
+# Create a functor (function-like object) that computes a model spectrum that we'll analyze below
 raw_spectrum = make_spectrum_object(lambda_min=lambda_min,lambda_max=lambda_max)
-
-# ╔═╡ 658f73c3-1e7a-47da-9130-06673f484ba1
-if true
-	raw_spectrum(lambdas)
-	stats_serial_raw = @timed raw_spectrum(lambdas)
-	(;  time=stats_serial_raw.time, bytes=stats_serial_raw.bytes)
-end
 
 # ╔═╡ 1c069610-4468-4d10-98f7-99662c26bdda
 if true
@@ -706,7 +755,7 @@ begin      # Create a model for the point spread function (PSF)
 end
 
 # ╔═╡ 0aafec61-ff44-49e2-95e9-d3506ac6afa7
-# Create a functor (function object) that computes a model for the the convolution of the raw spectrum with the PSF model
+# Create a functor (function-like object) that computes a model for the the convolution of the raw spectrum with the PSF model
 conv_spectrum = ConvolvedSpectrum(raw_spectrum,psf_model)
 
 # ╔═╡ dbf05374-1d89-4f30-b4b4-6cf57631f8b7
@@ -724,7 +773,7 @@ end
 
 # ╔═╡ 6ccce964-0439-4707-adf9-e171fd703609
 if true
-	result_spec_vec_serial = conv_spectrum(lambdas)
+	result_spec_vec_serial =  conv_spectrum(lambdas)
 	stats_spec_vec_serial = @timed conv_spectrum(lambdas)
 	(;  time=stats_spec_vec_serial.time, bytes=stats_spec_vec_serial.bytes)
 end
@@ -744,36 +793,11 @@ if true
 	(;  time=stats_spec_serial_map.time, bytes=stats_spec_serial_map.bytes )
 end
 
-# ╔═╡ c7121d63-b1ff-4c38-8579-e1adbfef48ef
-if !ismissing(response_1b)
-	result_spec_ThreadsXmap = ThreadsX.map(conv_spectrum,lambdas)
-	stats_spec_ThreadsXmap = @timed ThreadsX.map(conv_spectrum,lambdas)
-	(;  time=stats_spec_ThreadsXmap.time,
-		bytes=stats_spec_ThreadsXmap.bytes )
-end
-
-# ╔═╡ 0e9664ec-98d8-49d4-a376-24d4770c4c8f
-if !ismissing(response_1c)
-	ThreadsX.map(conv_spectrum,lambdas,basesize=batchsize_for_ThreadsXmap)
-	walltime_ThreadsXmap_batched = @elapsed ThreadsX.map(conv_spectrum,lambdas,basesize=batchsize_for_ThreadsXmap)
-end
-
-# ╔═╡ 5acc645a-0d32-4f51-8aa6-063725b83fa8
-if !ismissing(response_1c)
-	tmap(conv_spectrum,lambdas)
-	walltime_OhMyThreadsmap_default = @elapsed tmap(conv_spectrum,lambdas)
-end
-
-# ╔═╡ af161709-46d2-4c73-b10d-90acb1e85189
-if !ismissing(response_1c)
-	tmap(conv_spectrum,lambdas)
-	walltime_OhMyThreadsmap_static_batched = @elapsed tmap(conv_spectrum,lambdas, scheduler=:static, chunksize=chunksize_for_onmythreads)
-end
-
-# ╔═╡ 1e93928c-7f4c-4295-b755-4e5e16adbd8e
-if !ismissing(response_1c)
-	tmap(conv_spectrum,lambdas)
-	walltime_OhMyThreadsmap_dynamic = @elapsed tmap(conv_spectrum,lambdas, scheduler=:dynamic, chunksize=chunksize_for_onmythreads)
+# ╔═╡ 658f73c3-1e7a-47da-9130-06673f484ba1
+if true
+	ModelSpectrum.eval_spectrum_using_array(raw_spectrum,lambdas)
+	stats_serial_raw = @timed ModelSpectrum.eval_spectrum_using_array(raw_spectrum,lambdas)
+	(;  time=stats_serial_raw.time, bytes=stats_serial_raw.bytes)
 end
 
 # ╔═╡ 4b9a98ba-1731-4707-89a3-db3b5ac3a79b
@@ -793,6 +817,45 @@ if true
 		bytes=stats_spec_serial_loop.bytes )
 end
 
+# ╔═╡ 5acc645a-0d32-4f51-8aa6-063725b83fa8
+if !ismissing(response_1c)
+	result_spec_ohmythreads = tmap(conv_spectrum,lambdas)
+	stats_spec_ohmythreads_map = @timed tmap(conv_spectrum,lambdas)
+	(;  time=stats_spec_ohmythreads_map.time,
+		bytes=stats_spec_ohmythreads_map.bytes,
+		speedup=stats_spec_serial_loop.time/stats_spec_ohmythreads_map.time)
+end
+
+# ╔═╡ c7121d63-b1ff-4c38-8579-e1adbfef48ef
+if !ismissing(response_1c)
+	result_spec_ThreadsXmap = ThreadsX.map(conv_spectrum,lambdas)
+	stats_spec_ThreadsXmap = @timed ThreadsX.map(conv_spectrum,lambdas)
+	(;  time=stats_spec_ThreadsXmap.time,
+		bytes=stats_spec_ThreadsXmap.bytes,
+	speedup=stats_spec_serial_loop.time/stats_spec_ThreadsXmap.time)
+end
+
+# ╔═╡ af161709-46d2-4c73-b10d-90acb1e85189
+if !ismissing(response_1d)
+	tmap(conv_spectrum,lambdas; scheduler=:static, chunksize=chunksize_for_onmythreads)
+	walltime_OhMyThreadsmap_static_batched = @elapsed tmap(conv_spectrum,lambdas; scheduler=:static, chunksize=chunksize_for_onmythreads)
+	(;speedup=stats_spec_serial_loop.time/walltime_OhMyThreadsmap_static_batched)
+end
+
+# ╔═╡ 1e93928c-7f4c-4295-b755-4e5e16adbd8e
+if !ismissing(response_1d)
+	tmap(conv_spectrum,lambdas; scheduler=:dynamic, chunksize=chunksize_for_onmythreads)
+	walltime_OhMyThreadsmap_dynamic = @elapsed tmap(conv_spectrum,lambdas; scheduler=:dynamic, chunksize=chunksize_for_onmythreads)
+	(;speedup=stats_spec_serial_loop.time/walltime_OhMyThreadsmap_dynamic)
+end
+
+# ╔═╡ 0e9664ec-98d8-49d4-a376-24d4770c4c8f
+if !ismissing(response_1d)
+	ThreadsX.map(conv_spectrum,lambdas,basesize=batchsize_for_ThreadsXmap)
+	walltime_ThreadsXmap_batched = @elapsed ThreadsX.map(conv_spectrum,lambdas,basesize=batchsize_for_ThreadsXmap)
+	(;speedup=stats_spec_serial_loop.time/walltime_ThreadsXmap_batched)
+end
+
 # ╔═╡ e55c802d-7923-458f-af42-d951e82e029b
 function calc_spectrum_threaded_for_loop(x::AbstractArray, spectrum::T) where T<:AbstractSpectrum
     out = zeros(length(x))
@@ -803,11 +866,12 @@ function calc_spectrum_threaded_for_loop(x::AbstractArray, spectrum::T) where T<
 end
 
 # ╔═╡ b3a6004f-9d10-4582-832a-8917b701f2ad
-if !ismissing(response_1e)
+if !ismissing(response_1c)
 	result_spec_threaded_loop = calc_spectrum_threaded_for_loop(lambdas,conv_spectrum)
 	stats_spec_threaded_loop = @timed calc_spectrum_threaded_for_loop(lambdas,conv_spectrum)
 	(;  time=stats_spec_threaded_loop.time,
-		bytes=stats_spec_threaded_loop.bytes )
+		bytes=stats_spec_threaded_loop.bytes, 
+	 	speedup = stats_spec_serial_loop.time/stats_spec_threaded_loop.time  )
 end
 
 # ╔═╡ f272eab0-8a33-4161-bf9e-e378255631dd
@@ -824,7 +888,8 @@ if true
 	result_spec_ohmythreads_foreach = calc_spectrum_ohmythreads_foreach(lambdas,conv_spectrum)
 	stats_spec_ohmythreads_foreach = @timed calc_spectrum_ohmythreads_foreach(lambdas,conv_spectrum)
 	(;  time=stats_spec_ohmythreads_foreach.time,
-		bytes=stats_spec_ohmythreads_foreach.bytes )
+		bytes=stats_spec_ohmythreads_foreach.bytes,
+		speedup=stats_spec_serial_loop.time/stats_spec_ohmythreads_foreach.time )
 end
 
 # ╔═╡ c65aa7b6-d85e-4efa-a2ee-1b615155796e
@@ -841,7 +906,8 @@ if true
 	result_spec_threadsX_foreach = calc_spectrum_threadsX_foreach(lambdas,conv_spectrum)
 	stats_spec_threadsX_foreach = @timed calc_spectrum_threadsX_foreach(lambdas,conv_spectrum)
 	(;  time=stats_spec_threadsX_foreach.time,
-		bytes=stats_spec_threadsX_foreach.bytes )
+		bytes=stats_spec_threadsX_foreach.bytes,
+		speedup = stats_spec_serial_loop.time/stats_spec_threadsX_foreach.time)
 end
 
 # ╔═╡ 48b1fc18-eaaf-4f5e-9275-1e942dfbd643
@@ -858,11 +924,12 @@ if true
 	result_spec_polyester_foreach = calc_spectrum_polyester_foreach(lambdas,conv_spectrum)
 	stats_spec_polyester_foreach = @timed calc_spectrum_polyester_foreach(lambdas,conv_spectrum)
 	(;  time=stats_spec_polyester_foreach.time,
-		bytes=stats_spec_polyester_foreach.bytes )
+		bytes=stats_spec_polyester_foreach.bytes,
+		speedup=stats_spec_serial_loop.time/stats_spec_polyester_foreach.time)
 end
 
 # ╔═╡ 9b734e9c-f571-4a09-9744-221dcd55b4bf
-function calc_spectrum_flloop(x::AbstractArray, spectrum::T, ex::FLoops.Executor = ThreadedEx() ) where { T<:AbstractSpectrum }
+function calc_spectrum_flloop(x::AbstractArray, spectrum::T; basesize::Integer=div(Threads.nthreads(),length(x)),  ex::FLoops.Executor = ThreadedEx(basesize=basesize) ) where { T<:AbstractSpectrum }
     out = zeros(length(x))
      @floop ex for i in eachindex(out, x)
         @inbounds out[i] = spectrum(x[i])
@@ -873,8 +940,9 @@ end
 # ╔═╡ c2c68b93-1cd4-4a38-9dd9-47ce2d591907
 if true
 	result_spec_flloop = calc_spectrum_flloop(lambdas,conv_spectrum)
-	stats_spec_flloop = @timed calc_spectrum_flloop(lambdas,conv_spectrum)
-	(;  time=stats_spec_flloop.time, bytes=stats_spec_flloop.bytes )
+	stats_spec_flloop = @timed calc_spectrum_flloop(lambdas,conv_spectrum) 
+	(;  time=stats_spec_flloop.time, bytes=stats_spec_flloop.bytes,
+	speedup=stats_spec_serial_loop.time/stats_spec_flloop.time)
 end
 
 # ╔═╡ 398ba928-899f-4843-ad58-25df67c81ffe
@@ -882,7 +950,8 @@ function calc_mse_broadcasted(lambdas::AbstractArray, spec1::AbstractSpectrum, s
 	c = ModelSpectrum.speed_of_light
 	z = v/c
 	spec2_shifted = doppler_shifted_spectrum(spec2,z)
-	mse = sum((spec1.(lambdas) .- spec2_shifted.(lambdas)).^2)
+	abs2_diff_spectra = abs2.(spec1.(lambdas) .- spec2_shifted.(lambdas))
+	mse = sum(abs2_diff_spectra)
 	mse /= length(lambdas)
 end
 
@@ -890,18 +959,19 @@ end
 begin
 	result_mse_broadcasted = calc_mse_broadcasted(lambdas,conv_spectrum,conv_spectrum,v)
 	stats_mse_broadcasted = @timed calc_mse_broadcasted(lambdas,conv_spectrum,conv_spectrum,v)
+	(;  time=stats_mse_broadcasted.time, bytes=stats_mse_broadcasted.bytes)
 end
 
 # ╔═╡ 536fe0c4-567c-4bda-8c95-347f183c007b
-function calc_mse_loop(lambdas::AbstractArray, spec1::AbstractSpectrum, spec2::AbstractSpectrum,  v::Number; ex = ThreadedEx())
+function calc_mse_loop(lambdas::AbstractArray, spec1::AbstractSpectrum, spec2::AbstractSpectrum,  v::Number; basesize::Integer=div(Threads.nthreads(),length(lambdas)),  ex::FLoops.Executor = ThreadedEx(basesize=basesize))
 	c = ModelSpectrum.speed_of_light
 	z = v/c
 	spec2_shifted = doppler_shifted_spectrum(spec2,z)
-	tmp1 = spec1(first(lambdas))
-    tmp2 = spec2_shifted(first(lambdas))
-	mse = zero(promote_type(typeof(tmp1),typeof(tmp2)))
+	eltype_spec1 = first(Base.return_types(spec1,(eltype(lambdas),)))
+    eltype_spec2_shifted = first(Base.return_types(spec2_shifted,(eltype(lambdas),)))
+	mse = zero(promote_type(eltype_spec1,eltype_spec2_shifted))
 	for i in eachindex(lambdas)
-        @inbounds l = lambdas[i]
+        l = lambdas[i]
 		flux1 = spec1(l)
         flux2 = spec2_shifted(l)
 		mse += (flux1-flux2)^2
@@ -929,33 +999,33 @@ is nearly twice that of the serial loop to compute one spectrum $(round(stats_sp
 So far it doesn't seem particularly interesting.
 """
 
-# ╔═╡ 1c1ccc51-e32a-4881-b892-095d2be55916
-function calc_mse_flloop(lambdas::AbstractArray, spec1::AbstractSpectrum, spec2::AbstractSpectrum,  v::Number; ex = ThreadedEx())
+# ╔═╡ 01418f56-432c-458a-82ea-f2a5c75eb405
+function calc_mse_ohmythreads_map_reduce_separate(lambdas::AbstractArray, spec1::AbstractSpectrum, spec2::AbstractSpectrum, v::Number)
 	c = ModelSpectrum.speed_of_light
 	z = v/c
 	spec2_shifted = doppler_shifted_spectrum(spec2,z)
-	tmp1 = spec1(first(lambdas))
-    tmp2 = spec2_shifted(first(lambdas))
-	mse = zero(promote_type(typeof(tmp1),typeof(tmp2)))
-	@floop ex for i in eachindex(lambdas)
-        @inbounds l = lambdas[i]
-		flux1 = spec1(l)
-        flux2 = spec2_shifted(l)
-		@reduce(mse += (flux1-flux2)^2)
-    end
+	s1 = tmap(spec1,lambdas)
+	s2 = tmap(spec2_shifted,lambdas)
+	sa_of_spectra = StructArray(; s1=s1, s2=s2 )
+	abs2_diff_spectra = tmap(x->abs2(x.s1 - x.s2),sa_of_spectra)
+	mse = treduce(+,abs2_diff_spectra)
 	mse /= length(lambdas)
-    return mse
+end
+	
+
+# ╔═╡ d3995cc5-f804-4591-926e-b358a8068221
+if true
+	result_mse_ohmythreads_map_reduce_separate = calc_mse_ohmythreads_map_reduce_separate(lambdas,conv_spectrum,conv_spectrum,v)
+	stats_mse_ohmythreads_map_reduce_separate = @timed calc_mse_ohmythreads_map_reduce_separate(lambdas,conv_spectrum,conv_spectrum,v)
+	(;  time=stats_mse_ohmythreads_map_reduce_separate.time, bytes=stats_mse_ohmythreads_map_reduce_separate.bytes,
+	speedup=stats_mse_loop.time/stats_mse_ohmythreads_map_reduce_separate.time)
 end
 
-# ╔═╡ b0e08212-7e12-4d54-846f-5b0863c37236
-if !ismissing(response_1f)
-	result_mse_flloop = calc_mse_flloop(lambdas,conv_spectrum,conv_spectrum,v)
-	stats_mse_flloop = @timed calc_mse_flloop(lambdas,conv_spectrum,conv_spectrum,v)
-	(;  time=stats_mse_flloop.time, bytes=stats_mse_flloop.bytes )
-end
+# ╔═╡ cda32841-0e89-4019-abdc-cf7b0377aa48
+hint(md"The speed-up was $(round( stats_mse_loop.time / stats_mse_ohmythreads_map_reduce_separate.time /  Threads.nthreads(), digits=3)) of the maximum theoretical speed-up.")
 
 # ╔═╡ 293ad084-6d6a-4401-9819-53a24646d2c9
-function calc_mse_ohmythreads(lambdas::AbstractArray, spec1::AbstractSpectrum, spec2::AbstractSpectrum,  v::Number; ex = ThreadedEx())
+function calc_mse_ohmythreads(lambdas::AbstractArray, spec1::AbstractSpectrum, spec2::AbstractSpectrum,  v::Number)
 	c = ModelSpectrum.speed_of_light
 	z = v/c
 	spec2_shifted = doppler_shifted_spectrum(spec2,z)
@@ -979,15 +1049,39 @@ end
 if !ismissing(response_1f)
 	result_mse_ohmythreads = calc_mse_ohmythreads(lambdas,conv_spectrum,conv_spectrum,v)
 	stats_mse_ohmythreads = @timed calc_mse_ohmythreads(lambdas,conv_spectrum,conv_spectrum,v)
-	(;  time=stats_mse_ohmythreads.time, bytes=stats_mse_ohmythreads.bytes )
+	(;  time=stats_mse_ohmythreads.time, bytes=stats_mse_ohmythreads.bytes,
+	speedup=stats_mse_loop.time/stats_mse_ohmythreads.time)
 end
 
-# ╔═╡ 3183c6ac-5acd-4770-a638-c4c6ba3f7c4f
+# ╔═╡ 1c1ccc51-e32a-4881-b892-095d2be55916
+function calc_mse_flloop(lambdas::AbstractArray, spec1::AbstractSpectrum, spec2::AbstractSpectrum,  v::Number; basesize::Integer=div(Threads.nthreads(),length(lambdas)), ex::FLoops.Executor = ThreadedEx(basesize=basesize))
+	c = ModelSpectrum.speed_of_light
+	z = v/c
+	spec2_shifted = doppler_shifted_spectrum(spec2,z)
+	tmp1 = spec1(first(lambdas))
+    tmp2 = spec2_shifted(first(lambdas))
+	mse = zero(promote_type(typeof(tmp1),typeof(tmp2)))
+	@floop ex for i in eachindex(lambdas)
+        l = lambdas[i]
+		flux1 = spec1(l)
+        flux2 = spec2_shifted(l)
+		@reduce(mse += (flux1-flux2)^2)
+    end
+	mse /= length(lambdas)
+    return mse
+end
+
+# ╔═╡ b0e08212-7e12-4d54-846f-5b0863c37236
 if !ismissing(response_1f)
-md"""
-1g.  How did the performance of `calc_mse_flloop` or `calc_mse_ohmythreads` to the performance of `calc_mse_loop`?  Was the wall time for the parallel loop to compute the mean squared error  $(round(stats_mse_flloop.time,digits=3)) sec or $(round(stats_mse_ohmythreads.time,digits=3)) sec
-nearly twice that of the parallel loop to compute one spectrum $(round(stats_spec_flloop.time,digits=3)) sec?  Try to explain the main differences.
-"""
+	result_mse_flloop = calc_mse_flloop(lambdas,conv_spectrum,conv_spectrum,v)
+	stats_mse_flloop = @timed calc_mse_flloop(lambdas,conv_spectrum,conv_spectrum,v)
+	(;  time=stats_mse_flloop.time, bytes=stats_mse_flloop.bytes,
+	speedup=stats_mse_loop.time/stats_mse_flloop.time)
+end
+
+# ╔═╡ bad94aca-f77e-417e-be32-0840a3e5c958
+if !ismissing(response_1f)
+	hint(md"The speed-ups were $(round(stats_mse_loop.time / stats_mse_flloop.time / Threads.nthreads(), digits=3)) and $(round(stats_mse_loop.time /stats_mse_ohmythreads.time / Threads.nthreads(), digits=3)) of the maximum theoretical speed-up.")
 end
 
 # ╔═╡ 17659ddb-d4e0-4a4b-b34c-8ac52d5dad45
@@ -1003,7 +1097,7 @@ end
 begin
 	result_mse_mapreduce_serial = calc_mse_mapreduce(lambdas,conv_spectrum,conv_spectrum,v)
 	stats_mse_mapreduce_serial = @timed calc_mse_mapreduce(lambdas, conv_spectrum,conv_spectrum,v)
-	(;  time=stats_mse_mapreduce_serial.time, bytes=stats_mse_mapreduce_serial.bytes )
+	(;  time=stats_mse_mapreduce_serial.time, bytes=stats_mse_mapreduce_serial.bytes)
 end
 
 # ╔═╡ ab886349-5f3f-45e9-a6e1-a81fdfafa72f
@@ -1019,7 +1113,8 @@ end
 begin
 	result_mse_mapreduce_ohmythreads = calc_mse_mapreduce_ohmythreads(lambdas,conv_spectrum,conv_spectrum,v)
 	stats_mse_mapreduce_ohmythreads = @timed calc_mse_mapreduce_ohmythreads(lambdas,conv_spectrum,conv_spectrum,v)
-	(;  time=stats_mse_mapreduce_ohmythreads.time, bytes=stats_mse_mapreduce_ohmythreads.bytes )
+	(;  time=stats_mse_mapreduce_ohmythreads.time, bytes=stats_mse_mapreduce_ohmythreads.bytes,
+	speedup=stats_mse_loop.time/stats_mse_mapreduce_ohmythreads.time )
 
 end
 
@@ -1027,7 +1122,8 @@ end
 begin
 	result_mse_mapreduce_ohmythreads_batched = calc_mse_mapreduce_ohmythreads(lambdas,conv_spectrum,conv_spectrum,v; basesize=mapreduce_batchsize)
 	stats_mse_mapreduce_ohmythreads_batched = @timed calc_mse_mapreduce_ohmythreads(lambdas,conv_spectrum,conv_spectrum,v; basesize=mapreduce_batchsize)
-	(;  time=stats_mse_mapreduce_ohmythreads_batched.time, bytes=stats_mse_mapreduce_ohmythreads_batched.bytes )
+	(;  time=stats_mse_mapreduce_ohmythreads_batched.time, bytes=stats_mse_mapreduce_ohmythreads_batched.bytes,
+	speedup=stats_mse_loop.time/stats_mse_mapreduce_ohmythreads_batched.time)
 end
 
 # ╔═╡ 1778899b-8f05-4b1f-acb5-32af1ace08ee
@@ -1043,7 +1139,8 @@ end
 begin
 	result_mse_mapreduce_threadsx = calc_mse_mapreduce_threadsx(lambdas,conv_spectrum,conv_spectrum,v)
 	stats_mse_mapreduce_threadsx = @timed calc_mse_mapreduce_threadsx(lambdas,conv_spectrum,conv_spectrum,v)
-	(;  time=stats_mse_mapreduce_threadsx.time, bytes=stats_mse_mapreduce_threadsx.bytes )
+	(;  time=stats_mse_mapreduce_threadsx.time, bytes=stats_mse_mapreduce_threadsx.bytes,
+	speedup=stats_mse_loop.time/stats_mse_mapreduce_threadsx.time )
 
 end
 
@@ -1051,11 +1148,12 @@ end
 begin
 	result_mse_mapreduce_threadsx_batched = calc_mse_mapreduce_threadsx(lambdas,conv_spectrum,conv_spectrum,v; basesize=mapreduce_batchsize)
 	stats_mse_mapreduce_threadsx_batched = @timed calc_mse_mapreduce_threadsx(lambdas,conv_spectrum,conv_spectrum,v; basesize=mapreduce_batchsize)
-	(;  time=stats_mse_mapreduce_threadsx_batched.time, bytes=stats_mse_mapreduce_threadsx_batched.bytes )
+	(;  time=stats_mse_mapreduce_threadsx_batched.time, bytes=stats_mse_mapreduce_threadsx_batched.bytes,
+	speedup=stats_mse_loop.time/stats_mse_mapreduce_threadsx_batched.time)
 end
 
 # ╔═╡ 87df5b25-0d2f-4f81-80f1-aaf6c9f89ce3
-# response_1i:
+# For response_1k edit the following function:
 function calc_χ²_my_way(lambdas::AbstractArray, spec1::AbstractSpectrum, spec2::AbstractSpectrum, σ1::AbstractArray, σ2::AbstractArray, v::Number; #= any optional parameters? =# )
     # INSERT YOUR CODE HERE
     return missing
@@ -1085,9 +1183,9 @@ function calc_χ²_loop(lambdas::AbstractArray, spec1::AbstractSpectrum, spec2::
     c = ModelSpectrum.speed_of_light
     z = v/c
     spec2_shifted = doppler_shifted_spectrum(spec2,z)
-    tmp1 = spec1(first(lambdas))
-    tmp2 = spec2_shifted(first(lambdas))
-    χ² = zero(promote_type(typeof(tmp1),typeof(tmp2),eltype(σ1),eltype(σ2)))
+	eltype_spec1 = first(Base.return_types(spec1,(eltype(lambdas),)))
+    eltype_spec2_shifted = first(Base.return_types(spec2_shifted,(eltype(lambdas),)))
+    χ² = zero(promote_type(eltype_spec1,eltype_spec2_shifted))
     for i in eachindex(lambdas)
         @inbounds l = lambdas[i]
         flux1 = spec1(l)
@@ -1102,7 +1200,7 @@ end
 
 # ╔═╡ 8737797c-6563-4513-a5fc-fde9681b4c63
 Markdown.parse("""
-1j.  Before parallelizing your project code for shared memory, it may be good to get some practice parallelizing a simple function very similar to what's already been done above.  Try parallelizing the function `calc_χ²` by writing a function `calc_χ²_my_way` in the cell below.   You can parallel the calculation of calculating χ² using any one of the parallelization strategies demonstrated above.  I'd suggest trying to use the one that you plan to use for your project.  Feel free to refer to the serial function [`calc_χ²` at bottom of notebook]($linkto_calc_χ²_loop).
+**Q1k:**  Before parallelizing your project code for shared memory, it may be good to get some practice parallelizing a simple function very similar to what's already been done above.  Try parallelizing the function `calc_χ²` by writing a function `calc_χ²_my_way` in the cell below.   You can parallel the calculation of calculating χ² using any one of the parallelization strategies demonstrated above.  I'd suggest trying to use the one that you plan to use for your project.  Feel free to refer to the serial function [`calc_χ²` at bottom of notebook]($linkto_calc_χ²_loop).
 """)
 
 # ╔═╡ 3c5ee822-b938-4848-b2b0-f0de2e65b4db
@@ -1111,6 +1209,20 @@ begin
     @test calc_χ²_my_way(lambdas,conv_spectrum, conv_spectrum, σ_obs1, σ_obs2, 10.0 ) ≈ calc_χ²_loop(lambdas,conv_spectrum, conv_spectrum, σ_obs1, σ_obs2, 10.0 )
 end
 
+
+# ╔═╡ 35b1b5b1-2a23-44bb-bc19-805393d18d8a
+md"""
+# Extra information about your hardware
+"""
+
+# ╔═╡ ec08aa84-3f63-441a-a31c-85b7a82412d1
+Hwloc.topology_info()
+
+# ╔═╡ 21b3c52e-533f-488f-a2eb-602600b66738
+Hwloc.cachesize()
+
+# ╔═╡ e38e0b91-dbd3-4cc6-87ac-add4953411d1
+Hwloc.cachelinesize()
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1130,6 +1242,7 @@ Polyester = "f517fe37-dbe3-4b94-8317-1923a5111588"
 QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
 ThreadsX = "ac1d9e8a-700a-412c-b207-f0111f4b6c0d"
 
 [compat]
@@ -1147,6 +1260,7 @@ PlutoUI = "~0.7.71"
 Polyester = "~0.7.18"
 QuadGK = "~2.11.2"
 StaticArrays = "~1.9.14"
+StructArrays = "~0.7.1"
 ThreadsX = "~0.1.12"
 """
 
@@ -1156,7 +1270,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.11.2"
 manifest_format = "2.0"
-project_hash = "4b6cb2a996c901063779d30f27767c74e17a55b1"
+project_hash = "92000de1c0fc1a2c8e82fbf1ba77ef29c0198c7d"
 
 [[deps.AbstractPlutoDingetjes]]
 deps = ["Pkg"]
@@ -2477,6 +2591,27 @@ git-tree-sha1 = "83151ba8065a73f53ca2ae98bc7274d817aa30f2"
 uuid = "7792a7ef-975c-4747-a70f-980b88e8d1da"
 version = "0.5.8"
 
+[[deps.StructArrays]]
+deps = ["ConstructionBase", "DataAPI", "Tables"]
+git-tree-sha1 = "8ad2e38cbb812e29348719cc63580ec1dfeb9de4"
+uuid = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
+version = "0.7.1"
+
+    [deps.StructArrays.extensions]
+    StructArraysAdaptExt = "Adapt"
+    StructArraysGPUArraysCoreExt = ["GPUArraysCore", "KernelAbstractions"]
+    StructArraysLinearAlgebraExt = "LinearAlgebra"
+    StructArraysSparseArraysExt = "SparseArrays"
+    StructArraysStaticArraysExt = "StaticArrays"
+
+    [deps.StructArrays.weakdeps]
+    Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+    GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
+    KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+    LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
 [[deps.StyledStrings]]
 uuid = "f489334b-da3d-4c2e-b8f0-e476e12c162b"
 version = "1.11.0"
@@ -2892,11 +3027,7 @@ version = "1.9.2+0"
 # ╟─85aad005-eac0-4f71-a32c-c8361c31813b
 # ╟─bdf61711-36e0-40d5-b0c5-3bac20a25aa3
 # ╟─629442ba-a968-4e35-a7cb-d42a0a8783b4
-# ╟─0bee1c3c-b130-49f2-baa4-efd8e3b49fdc
-# ╟─f76f329a-8dde-4790-96f2-ade735643aeb
-# ╟─0e4d7808-47e2-4740-ab93-5d3973eecaa8
-# ╟─8a50e9fa-031c-4912-8a2d-466e6a9a9935
-# ╟─7df5fc86-889f-4a5e-ac2b-8c6f68d7c32e
+# ╟─b133064a-d02e-4a71-88d7-e430b80d24b1
 # ╟─571cab3f-771e-4464-959e-f351194049e2
 # ╠═0c775b35-702e-4664-bd23-7557e4e189f4
 # ╟─3059f3c2-cabf-4e20-adaa-9b6d0c07184f
@@ -2904,6 +3035,13 @@ version = "1.9.2+0"
 # ╠═73e5e40a-1e59-41ed-a48d-7fb99f5a6755
 # ╠═f97f1815-50a2-46a9-ac20-e4a3e34d898c
 # ╟─53da8d7a-8620-4fe5-81ba-f615d2d4ed2a
+# ╟─8df4e8d2-b955-424d-a7ec-264ce2b0e506
+# ╟─826d2312-0803-4c36-bb72-df6d8241910c
+# ╟─f76f329a-8dde-4790-96f2-ade735643aeb
+# ╟─0e4d7808-47e2-4740-ab93-5d3973eecaa8
+# ╟─410b6052-6d6d-4fd8-844e-8941845d8d90
+# ╟─8a50e9fa-031c-4912-8a2d-466e6a9a9935
+# ╟─7df5fc86-889f-4a5e-ac2b-8c6f68d7c32e
 # ╠═cc1418c8-3261-4c70-bc19-2921695570a6
 # ╠═7f724449-e90e-4f8b-b13c-9640a498893c
 # ╠═c85e51b2-2d3d-46a2-8f3f-03b289cab288
@@ -2943,38 +3081,21 @@ version = "1.9.2+0"
 # ╠═ca9c7d9e-e6cc-46cc-8a9b-ccda123591a2
 # ╠═215011e0-5977-43f8-bb65-83c09b3c07d8
 # ╟─f108d26b-6c75-4eb6-9e88-a60ec038a73c
+# ╟─21f305db-24e1-47d1-b1f4-be04ca91780e
 # ╟─e71cede9-382e-47e2-953a-2fa96ed50002
 # ╟─4d54b6a7-3fc0-4c63-8a9d-d683aa4ecefe
-# ╟─21f305db-24e1-47d1-b1f4-be04ca91780e
 # ╟─a44a3478-541d-40d6-9d99-04b918c16bfb
 # ╠═4b9a98ba-1731-4707-89a3-db3b5ac3a79b
 # ╠═9941061a-ad42-46b0-9d0f-7584ebca7c62
 # ╟─96914ff8-56c8-4cc8-96bc-fd3d13f7e4ce
 # ╟─32685a28-54d9-4c0d-8940-e82843d2cab2
 # ╟─3717d201-0bc3-4e3c-8ecd-d835e58f6821
-# ╟─496e8c5e-251b-4448-8c59-541877d752c1
 # ╟─04bcafcd-1d2f-4ce5-893f-7ec5bb05f9ed
 # ╠═ca8ceb27-86ea-4b90-a1ae-86d794c9fc98
-# ╟─4ad081a2-b5c2-48ff-9a28-ec9c8d9f0d0e
-# ╠═c7121d63-b1ff-4c38-8579-e1adbfef48ef
-# ╟─2399ce76-b6da-4a61-bcda-aee22dd275f8
-# ╠═a25c6705-54f4-4bad-966e-a8f13ae4c711
-# ╟─739136b1-6b01-44c0-bbfd-dcb490d1e191
-# ╟─dcce9a84-a9b1-47c1-8e08-7575cb299b56
-# ╠═fb063bc5-22bc-4b32-8fcb-5fbc4765c8b5
-# ╠═0e9664ec-98d8-49d4-a376-24d4770c4c8f
-# ╟─90c9d079-4bbc-4609-aa12-afa41a74b2fb
-# ╟─0edbb2db-4db8-4dc4-9a73-f7ff86e6f577
-# ╟─a944fdea-f41b-4a5f-95ac-e5f4074d4290
-# ╠═b4cbb43d-6e4c-4917-99a4-03d13e736144
-# ╠═5acc645a-0d32-4f51-8aa6-063725b83fa8
-# ╠═af161709-46d2-4c73-b10d-90acb1e85189
-# ╠═1e93928c-7f4c-4295-b755-4e5e16adbd8e
+# ╟─8b61fca1-2f89-4c74-bca8-c6cc70ba62ad
 # ╟─bd81357b-c461-458e-801c-610893dd5ea1
 # ╟─0e0c25d4-35b9-429b-8223-90e9e8be90f9
 # ╠═e55c802d-7923-458f-af42-d951e82e029b
-# ╟─5a63ebd6-3e18-49ee-8d1d-4bb2da6419b6
-# ╠═86e7d984-c128-4d2e-8599-3bc70db87a1d
 # ╟─c69c0a4a-b90b-414c-883d-3aa50c04b5e1
 # ╟─3604a697-8f21-447f-bf75-b3af989e9896
 # ╟─b3a6004f-9d10-4582-832a-8917b701f2ad
@@ -2989,6 +3110,27 @@ version = "1.9.2+0"
 # ╟─c2c68b93-1cd4-4a38-9dd9-47ce2d591907
 # ╟─f9b3f5ce-cfc1-4d59-b21e-2fd07075f036
 # ╟─7c367a0b-c5b9-459b-9ccf-e07c84e0b32a
+# ╟─496e8c5e-251b-4448-8c59-541877d752c1
+# ╟─263e96b7-e659-468d-ba97-ca9832f6ea4d
+# ╠═86e7d984-c128-4d2e-8599-3bc70db87a1d
+# ╟─4ad081a2-b5c2-48ff-9a28-ec9c8d9f0d0e
+# ╠═5acc645a-0d32-4f51-8aa6-063725b83fa8
+# ╠═c7121d63-b1ff-4c38-8579-e1adbfef48ef
+# ╟─2399ce76-b6da-4a61-bcda-aee22dd275f8
+# ╠═a25c6705-54f4-4bad-966e-a8f13ae4c711
+# ╟─739136b1-6b01-44c0-bbfd-dcb490d1e191
+# ╟─dcce9a84-a9b1-47c1-8e08-7575cb299b56
+# ╟─bd185f74-d666-42b4-8da1-c768217f7782
+# ╟─2c9cf709-9bc8-48bf-9e19-db8cf7c8690b
+# ╠═b4cbb43d-6e4c-4917-99a4-03d13e736144
+# ╠═af161709-46d2-4c73-b10d-90acb1e85189
+# ╠═1e93928c-7f4c-4295-b755-4e5e16adbd8e
+# ╠═fb063bc5-22bc-4b32-8fcb-5fbc4765c8b5
+# ╠═0e9664ec-98d8-49d4-a376-24d4770c4c8f
+# ╟─90c9d079-4bbc-4609-aa12-afa41a74b2fb
+# ╠═0edbb2db-4db8-4dc4-9a73-f7ff86e6f577
+# ╟─a944fdea-f41b-4a5f-95ac-e5f4074d4290
+# ╟─eb57f7bb-1bff-471f-a599-d1d7d8f771ad
 # ╟─d43525da-e0a2-4d2f-9dbb-bf187eebf6c1
 # ╟─547ad5ba-06ad-4707-a7ef-e444cf88ae53
 # ╟─7ba35a63-ac61-434b-b759-95d505f62d9e
@@ -2998,36 +3140,44 @@ version = "1.9.2+0"
 # ╟─3ac01c04-52e3-497e-8c29-8c704e23ae39
 # ╟─790377a7-1301-44a8-b300-418567737373
 # ╠═536fe0c4-567c-4bda-8c95-347f183c007b
-# ╠═db96a6c9-8352-47f3-8319-9c373aa03ff4
+# ╟─db96a6c9-8352-47f3-8319-9c373aa03ff4
 # ╟─6e52c719-e9fc-478a-9709-49e250a27d6b
 # ╟─e36cda69-d300-4156-9bef-a372f94306d9
-# ╟─161ea6af-5661-44e1-ae40-1b581b636c25
-# ╠═1c1ccc51-e32a-4881-b892-095d2be55916
-# ╠═293ad084-6d6a-4401-9819-53a24646d2c9
-# ╠═7def3535-6f90-4bf8-b86f-aac278666663
-# ╠═1989da2a-1fe2-49a0-b279-5925ae4b428c
+# ╟─8f56a866-a141-4275-9769-957ed5834afe
+# ╟─cf2938cc-d3f0-4077-9262-3d51866df2cf
+# ╠═01418f56-432c-458a-82ea-f2a5c75eb405
+# ╟─d3995cc5-f804-4591-926e-b358a8068221
+# ╟─bd75a60b-ca34-4211-ac35-8325102cff68
+# ╠═5f379c7a-9713-45f7-9a5e-57b8197332c3
 # ╟─8d7c27d5-4a07-4ab4-9ece-94fdb7053f73
-# ╠═3231b010-718a-4863-be43-1f0326451e96
-# ╠═b0e08212-7e12-4d54-846f-5b0863c37236
-# ╠═3183c6ac-5acd-4770-a638-c4c6ba3f7c4f
+# ╟─cda32841-0e89-4019-abdc-cf7b0377aa48
+# ╟─161ea6af-5661-44e1-ae40-1b581b636c25
+# ╠═293ad084-6d6a-4401-9819-53a24646d2c9
+# ╟─3231b010-718a-4863-be43-1f0326451e96
+# ╠═1c1ccc51-e32a-4881-b892-095d2be55916
+# ╟─b0e08212-7e12-4d54-846f-5b0863c37236
+# ╟─3183c6ac-5acd-4770-a638-c4c6ba3f7c4f
 # ╠═8e9b1e02-2bc0-49d2-b7ed-38de877ebe77
 # ╟─ba62f716-b1b5-4d11-91f2-ed121b48216c
+# ╟─bad94aca-f77e-417e-be32-0840a3e5c958
 # ╟─bbdd495c-f2c6-4264-a4e9-5083753eb410
 # ╟─383aa611-e115-482e-873c-4487e53d457f
 # ╟─2c6fa743-3dec-417b-b05a-17bb52b5d39d
 # ╠═17659ddb-d4e0-4a4b-b34c-8ac52d5dad45
 # ╠═2ef9e7e0-c856-4ef3-a08f-89817fc5fd60
+# ╟─ac1ffdbf-de6f-48cd-af7c-99528ef26dc0
+# ╠═e331d501-71ed-4d93-8498-5c1193776865
 # ╟─ae47ef38-e8d0-40b9-9e61-3ab3ca7e7a49
-# ╠═ab886349-5f3f-45e9-a6e1-a81fdfafa72f
-# ╠═19052549-3c5d-4b49-b708-05eac0a2a0ac
 # ╟─aad94861-e2b3-417d-b640-b821e53adb23
+# ╠═ab886349-5f3f-45e9-a6e1-a81fdfafa72f
+# ╟─19052549-3c5d-4b49-b708-05eac0a2a0ac
 # ╠═1778899b-8f05-4b1f-acb5-32af1ace08ee
-# ╠═9e78bfc1-fb4e-4626-b387-c2f83bed6ef0
+# ╟─9e78bfc1-fb4e-4626-b387-c2f83bed6ef0
 # ╟─f1c0321b-7811-42b1-9d0c-9c69f43d7e1a
 # ╠═df044a68-605f-4347-832a-68090ee07950
 # ╠═7eccc74d-9a49-44d9-9e43-cbb3c8ad7ce5
 # ╠═a661d895-d3d7-4e96-a08f-55b125ed1d40
-# ╠═3f01d534-b01d-4ab4-b3cd-e809b02563a9
+# ╟─3f01d534-b01d-4ab4-b3cd-e809b02563a9
 # ╠═d16adf94-72c3-480d-bd92-738e806068f8
 # ╟─56c5b496-a063-459a-8686-22fc70b6a214
 # ╟─c4ff4add-ab3c-4585-900e-41f17e905ac5
@@ -3039,15 +3189,15 @@ version = "1.9.2+0"
 # ╠═bd77bc71-ffdf-4ba1-b1ee-6f2a69044e6f
 # ╠═6f411bcc-7084-43c3-a88b-b56ba77b5732
 # ╠═3c5ee822-b938-4848-b2b0-f0de2e65b4db
-# ╟─35b1b5b1-2a23-44bb-bc19-805393d18d8a
-# ╠═ec08aa84-3f63-441a-a31c-85b7a82412d1
-# ╠═21b3c52e-533f-488f-a2eb-602600b66738
-# ╠═e38e0b91-dbd3-4cc6-87ac-add4953411d1
 # ╟─3b50062c-99c1-4f68-aabe-2d40d4ad7504
-# ╠═d83a282e-cb2b-4837-bfd4-8404b3722e3a
+# ╟─d83a282e-cb2b-4837-bfd4-8404b3722e3a
 # ╟─c9cf6fb3-0146-42e6-aaae-24e97254c805
 # ╠═76730d06-06da-4466-8814-2096b221090f
 # ╠═73358bcf-4129-46be-bef4-f623b11e245b
 # ╠═a9601654-8263-425e-8d8f-c5bbeacbbe06
+# ╟─35b1b5b1-2a23-44bb-bc19-805393d18d8a
+# ╠═ec08aa84-3f63-441a-a31c-85b7a82412d1
+# ╠═21b3c52e-533f-488f-a2eb-602600b66738
+# ╠═e38e0b91-dbd3-4cc6-87ac-add4953411d1
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
