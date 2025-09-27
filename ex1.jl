@@ -368,7 +368,7 @@ md"""
 1b.  Given that this notebook is using $(Threads.nthreads()) threads, what is the theoretical maximum improvement in the performance of calculating the spectrum when using multi-threading relative to calculatingi the spectrum in serial?  """
 
 # ╔═╡ ca8ceb27-86ea-4b90-a1ae-86d794c9fc98
-response_1b = "" # missing  # md"Insert your responce"
+response_1b = missing  # md"Insert your responce"
 
 # ╔═╡ 8b61fca1-2f89-4c74-bca8-c6cc70ba62ad
 begin
@@ -431,7 +431,7 @@ md"""
 """
 
 # ╔═╡ 86e7d984-c128-4d2e-8599-3bc70db87a1d
-response_1c = "" #missing # md"Insert your response"
+response_1c = missing # md"Insert your response"
 
 # ╔═╡ c69c0a4a-b90b-414c-883d-3aa50c04b5e1
 begin
@@ -457,7 +457,7 @@ md"""
 """
 
 # ╔═╡ a25c6705-54f4-4bad-966e-a8f13ae4c711
-response_1d = "" #missing  # md"Insert your responce"
+response_1d = missing  # md"Insert your responce"
 
 # ╔═╡ 739136b1-6b01-44c0-bbfd-dcb490d1e191
 begin
@@ -560,7 +560,7 @@ md"""
 """
 
 # ╔═╡ 5f379c7a-9713-45f7-9a5e-57b8197332c3
-response_1f = "" #missing # md"Insert your response"
+response_1f = missing # md"Insert your response"
 
 # ╔═╡ 8d7c27d5-4a07-4ab4-9ece-94fdb7053f73
 begin
@@ -586,7 +586,7 @@ md"""
 """
 
 # ╔═╡ 8e9b1e02-2bc0-49d2-b7ed-38de877ebe77
-response_1g = missing # md"Insert your response"
+response_1g = missing  # md"Insert your response"
 
 # ╔═╡ ba62f716-b1b5-4d11-91f2-ed121b48216c
 begin
@@ -1046,7 +1046,7 @@ function calc_mse_ohmythreads(lambdas::AbstractArray, spec1::AbstractSpectrum, s
 end
 
 # ╔═╡ 3231b010-718a-4863-be43-1f0326451e96
-if true
+if !ismissing(response_1f)
 	result_mse_ohmythreads = calc_mse_ohmythreads(lambdas,conv_spectrum,conv_spectrum,v)
 	stats_mse_ohmythreads = @timed calc_mse_ohmythreads(lambdas,conv_spectrum,conv_spectrum,v)
 	(;  time=stats_mse_ohmythreads.time, bytes=stats_mse_ohmythreads.bytes,
@@ -1072,7 +1072,7 @@ function calc_mse_flloop(lambdas::AbstractArray, spec1::AbstractSpectrum, spec2:
 end
 
 # ╔═╡ b0e08212-7e12-4d54-846f-5b0863c37236
-if true
+if !ismissing(response_1f)
 	result_mse_flloop = calc_mse_flloop(lambdas,conv_spectrum,conv_spectrum,v)
 	stats_mse_flloop = @timed calc_mse_flloop(lambdas,conv_spectrum,conv_spectrum,v)
 	(;  time=stats_mse_flloop.time, bytes=stats_mse_flloop.bytes,
@@ -1080,7 +1080,9 @@ if true
 end
 
 # ╔═╡ bad94aca-f77e-417e-be32-0840a3e5c958
-hint(md"The speed-ups were $(round(stats_mse_loop.time / stats_mse_flloop.time / Threads.nthreads(), digits=3)) and $(round(stats_mse_loop.time /stats_mse_ohmythreads.time / Threads.nthreads(), digits=3)) of the maximum theoretical speed-up.")
+if !ismissing(response_1f)
+	hint(md"The speed-ups were $(round(stats_mse_loop.time / stats_mse_flloop.time / Threads.nthreads(), digits=3)) and $(round(stats_mse_loop.time /stats_mse_ohmythreads.time / Threads.nthreads(), digits=3)) of the maximum theoretical speed-up.")
+end
 
 # ╔═╡ 17659ddb-d4e0-4a4b-b34c-8ac52d5dad45
 function calc_mse_mapreduce(lambdas::AbstractArray, spec1::AbstractSpectrum, spec2::AbstractSpectrum, v::Number)
@@ -3168,7 +3170,7 @@ version = "1.9.2+0"
 # ╟─ae47ef38-e8d0-40b9-9e61-3ab3ca7e7a49
 # ╟─aad94861-e2b3-417d-b640-b821e53adb23
 # ╠═ab886349-5f3f-45e9-a6e1-a81fdfafa72f
-# ╠═19052549-3c5d-4b49-b708-05eac0a2a0ac
+# ╟─19052549-3c5d-4b49-b708-05eac0a2a0ac
 # ╠═1778899b-8f05-4b1f-acb5-32af1ace08ee
 # ╟─9e78bfc1-fb4e-4626-b387-c2f83bed6ef0
 # ╟─f1c0321b-7811-42b1-9d0c-9c69f43d7e1a
