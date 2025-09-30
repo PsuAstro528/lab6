@@ -48,16 +48,16 @@ md"""
 
 # ╔═╡ bdf61711-36e0-40d5-b0c5-3bac20a25aa3
 md"""
-In this lab, we'll explore a multiple different ways that we can parallelize calculations across multiple cores of a single workstation or server.
+In this lab, we'll explore multiple different ways that we can parallelize calculations across multiple cores of a single workstation or server.
 This exercise will focus on parallelization using multiple *threads*.
 A separate exercise will focus on parallelization using multiple *processes*.
 """
 
 # ╔═╡ 629442ba-a968-4e35-a7cb-d42a0a8783b4
 protip(md"""
-In my experience, parallelization via multiple threads tends to be more efficient than using multiple processes for small to mid-scale parallelization (several to tens of cores).  For larger-scale parallelization (hundreds or thousands of cores), using multiple processes can be advantagous or even required.   For me, multi-threading is my "go-to" method for an initial parallelization.  That said, it's good to be aware of some of the reasons that some projects choose to parallelize their code over multiple processes (e.g., if you're concerned about security of data, robustness to errors in one process).  For me, the main advantage of using multiple processes is that multiple processes will be necessary once we transition to distributed memory computing.  Therefore, parallelizing your code using multiple processes can make it easier to scale up when you want to use more cores or more memory than is avaliable in a single node.
+In my experience, parallelization via multiple threads tend to be more efficient than using multiple processes for small to mid-scale parallelization (several to tens of cores).  For larger-scale parallelization (hundreds or thousands of cores), using multiple processes can be advantagous or even required.   For me, multi-threading is my "go-to" method for an initial parallelization.  That said, it's good to be aware of some of the reasons that some projects choose to parallelize their code over multiple processes (e.g., if you're concerned about security of data, robustness to errors in one process).  For me, the main advantage of using multiple processes is that multiple processes will be necessary once we transition to distributed memory computing.  Therefore, parallelizing your code using multiple processes can make it easier to scale up when you want to use more cores or more memory than is avaliable in a single node.
 
-Near the end of this exercise we'll see an example of how a programming interfaces that makes it easy to transition code between multi-threaded and mulit-process models.
+Near the end of this exercise we'll see an example of how a programming interface makes it easy to transition code between multi-threaded and multi-process models.
 """)
 
 # ╔═╡ b133064a-d02e-4a71-88d7-e430b80d24b1
@@ -104,12 +104,12 @@ end
 md"""
 Just because you're running on a server with $(cpucores()) cores doesn't mean that you should use them all for yourself.  
 If you're using the Lynx portal and BYOE JupyterLab server, then you should limit the number of threads you use to the number of CPU cores that have been allocated to your job.  
-For this lab, you should request at least threee CPU cores be allocated to your session when you first submit the request for the BYOE JupyterLab server using the box labeled "Number of Cores", i.e. before you open this notebook and even before you start your Pluto session.  I'd suggest asking for 4 CPU cores, so you can notice more significant speed-ups from parallelization.
+For this lab, you should request at least three CPU cores be allocated to your session when you first submit the request for the BYOE JupyterLab server using the box labeled "Number of Cores", i.e. before you open this notebook and even before you start your Pluto session.  I'd suggest asking for 4 CPU cores, so you can notice more significant speed-ups from parallelization.
 """
 
 # ╔═╡ 826d2312-0803-4c36-bb72-df6d8241910c
 md"""
-We can lookup the parameters for your job using **environment variables**.  In julia, they are accessible using the dictionary, `ENV`.  For example, the environment variable `ENV["SLURM_CPUS_PER_TASK"]` tells us how many CPU cores were allocated for our task.
+We can look up the parameters for your job using **environment variables**.  In Julia, they are accessible using the dictionary, `ENV`.  For example, the environment variable `ENV["SLURM_CPUS_PER_TASK"]` tells us how many CPU cores were allocated for our task.
 """
 
 # ╔═╡ f76f329a-8dde-4790-96f2-ade735643aeb
@@ -137,25 +137,25 @@ end
 
 # ╔═╡ 410b6052-6d6d-4fd8-844e-8941845d8d90
 md"""
-This Pluto notebook has **$(Threads.nthreads()) threads** avaliable for multithreaded computations.
+This Pluto notebook has **$(Threads.nthreads()) threads** available for multithreaded computations.
 """
 
 # ╔═╡ 8a50e9fa-031c-4912-8a2d-466e6a9a9935
 md"""
-Even when you have a JupyterLab server (or remote desktop or job scheduled by Slurm, PBS or HTCondor) that has been allocated multiple CPU cores, that doesn't mean that any code will make use of more than one core.  For code to make use of those cores, it has to written in a way that indicates which portions of the code may execute in parallel.  This exercise will demonstrate several ways that you can write parallel code.  You don't need to master the syntax for all of them.  As always, the concepts are more important.  When it comes time to write parallel code for your project, then you can come back here to remind yourself of the syntax specific to whichever package you are using to express your parallel computations.
+Even when you have a JupyterLab server (or remote desktop or job scheduled by Slurm, PBS or HTCondor) that has been allocated multiple CPU cores, that doesn't mean that any code will make use of more than one core.  For code to make use of those cores, it has to be written in a way that indicates which portions of the code may execute in parallel.  This exercise will demonstrate several ways that you can write parallel code.  You don't need to master the syntax for all of them.  As always, the concepts are more important.  When it comes time to write parallel code for your project, you can come back here to remind yourself of the syntax specific to whichever package you are using to express your parallel computations.
 """
 
 # ╔═╡ 7df5fc86-889f-4a5e-ac2b-8c6f68d7c32e
 warning_box(md"""The Lynx Portal's Pluto server for this class has been configured to start notebooks with as many threads as physical cores that were allocated to the parent job.  
 
-However, if you start julia manually (e.g., from the command line or remote desktop), then you should check that its using the desired number of threads.  You can control this by either setting the `JULIA_NUM_THREADS` environment variable before your start julia or by adding the `-t` option on the command line when you start julia.  Somewhat confusingly, even if you start julia using multiple threads, that doesn't mean that the Pluto server will assign that many threads to each notebook.  If you run your own Pluto server, then you can control the number of threads used within a notebook by starting it with
+However, if you start julia manually (e.g., from the command line or remote desktop), then you should check that its using the desired number of threads.  You can control this by either setting the `JULIA_NUM_THREADS` environment variable before you start julia or by adding the `-t` option on the command line when you start julia.  Somewhat confusingly, even if you start julia using multiple threads, that doesn't mean that the Pluto server will assign that many threads to each notebook.  If you run your own Pluto server, then you can control the number of threads used within a notebook by starting it with
 ```julia
 using Pluto
 Pluto.run(threads=4)
 ```""")
 
 # ╔═╡ cc1418c8-3261-4c70-bc19-2921695570a6
-Threads.nthreads()  # Number of threads avaliable to this Pluto notebook
+Threads.nthreads()  # Number of threads available to this Pluto notebook
 
 # ╔═╡ 7f724449-e90e-4f8b-b13c-9640a498893c
 @test 1 <= Threads.nthreads() <= cpucores()
@@ -167,7 +167,7 @@ Threads.nthreads()  # Number of threads avaliable to this Pluto notebook
 md"1a.  How many threads is your notebook using?  (Please enter it as an integer rather than a function call, so that it gets stored in your notebook.  That way the TA and instructor will be able to interpret the speed-up factors you get below.)"
 
 # ╔═╡ 0bcde4df-1e31-4774-a31f-bd451bb6f758
-response_1a = missing # Insert response as simple integer, and not as a variable for function
+response_1a = missing # Insert response as a simple integer, and not as a variable for the function
 
 # ╔═╡ c41d65e3-ea35-4f97-90a1-bfeaeaf927ad
 begin
@@ -194,7 +194,7 @@ md"# Calculation to parallelize"
 md"""
 For this lab, I've written several functions that will be used to generate simulated spectra with multiple absorption lines.  This serves a couple of purposes.
 First, you'll use the code in the exercise, so you have a calculation that's big enough to be worth parallelizing.  For the purposes of this exercise, it's not essential that you review the code I provided in the `src/*.jl` files.  However, the second purpose of this example is providing code that demonstrates several of the programming patterns that we've discussed in class.  For example, the code in the `ModelSpectrum` module
-- is in the form of several small functions, each which does one specific task.
+- is in the form of several small functions, each of which does one specific task.
 - has been moved out of the notebook and into `.jl` files in the `src` directory.
 - creates objects that compute a model spectrum and a convolution kernel.
 - uses [abstract types](https://docs.julialang.org/en/v1/manual/types/#Abstract-Types-1) and [parametric types](https://docs.julialang.org/en/v1/manual/types/#Parametric-Types-1), so as to create type-stable functions.
@@ -209,7 +209,7 @@ Then we'll bring several of the custom types into scope, so we can use them easi
 # ╔═╡ c31cf36c-21ec-46f1-96aa-b014ff094f8a
 md"""
 ## Synthetic Spectrum
-In this exercise, we're going to create a model spectrum consisting of continuum, stellar absorption lines, telluric absorption lines.
+In this exercise, we're going to create a model spectrum consisting of continuum, stellar absorption lines, and telluric absorption lines.
 The `ModelSpectrum` module provides a `SimulatedSpectrum` type.
 We need to create a `SimulatedSpectrum` object that contains specific parameter values.  The function below will do that for us.
 """
@@ -217,7 +217,7 @@ We need to create a `SimulatedSpectrum` object that contains specific parameter 
 # ╔═╡ 7026e51d-c3e4-4503-9f35-71074b0c2f1a
 md"""
 Next, we specify a set of wavelengths where the spectrum will be defined,
-and create a functor (or function-like object) that contains all the line properties and can compute the synethic spectrum.
+and create a functor (or function-like object) that contains all the line properties and can compute the synthetic spectrum.
 """
 
 # ╔═╡ ad302f2b-69dc-4559-ba12-d7fb2e8e689e
@@ -286,7 +286,7 @@ Before we parallelize anything, we want to benchmark the calculation of spectra 
 # ╔═╡ b195ebd2-9584-40b8-ae3e-6d9ce88b5398
 md"""
 Let's think about what's happening with the serial version.
-With `raw_spectrum(lambdas)` or `raw_spectrum.(lambdas)` we will evalute the spectrum model at each of the specified wavelengths using a few different syntaxes.
+With `raw_spectrum(lambdas)` or `raw_spectrum.(lambdas)` we will evaluate the spectrum model at each of the specified wavelengths using a few different syntaxes.
 """
 
 # ╔═╡ d6d3a2d1-241e-44c1-a11b-5bfb2b3c5f4b
@@ -304,19 +304,19 @@ Next, we'll evaluate the convolution of the raw spectrum with the PSF model at e
 # ╔═╡ 51adffd7-8fb6-4ed2-8510-303a37d6efc3
 md"""
 Now, the two implementations performed very differently.  Let's think about what's causing that difference.
-In each case, the convolution integral is being computed numerically by [QuadGK.jl](https://github.com/JuliaMath/QuadGK.jl).  On one hand, it's impressive that QuadGK.jl was written in a generic way, so that it can compute an integral of a scalar (when we used the broadcasting notation) or integral of vectors (when we passed the vector of wavelengths without broadcasting).
+In each case, the convolution integral is being computed numerically by [QuadGK.jl](https://github.com/JuliaMath/QuadGK.jl).  On one hand, it's impressive that QuadGK.jl was written in a generic way, so that it can compute an integral of a scalar (when we used the broadcasting notation) or an integral of vectors (when we passed the vector of wavelengths without broadcasting).
 On the other hand, there's a significant difference in the wall clock time and lots more memory being allocated when we pass the vector, instead of using broadcasting.
-When we pass a vector, the `quadgk` is computing the convolution integral is using vectors.  Since the size of the vectors isn't known at compile time they must be allocated  on the heap.  This results in many unnecessary memory allocations (compared to if the calculations were done one wavelength at a time).
+When we pass a vector, the `quadgk` is computing the convolution integral using vectors.  Since the size of the vectors isn't known at compile time they must be allocated  on the heap.  This results in many unnecessary memory allocations (compared to if the calculations were done one wavelength at a time).
 
-We can get around this problem by using broadcasting or map, so the convolution integral is performed on scalars, once for each wavelength.  This significantly reduces the number of memory allocations and the runtime.  This also has the advantage that we've broken up the work into many independent calculations that could be performed in parallel.
+We can get around this problem by using broadcasting or a map, so the convolution integral is performed on scalars, once for each wavelength.  This significantly reduces the number of memory allocations and the runtime.  This also has the advantage that we've broken up the work into many independent calculations that could be performed in parallel.
 """
 
 # ╔═╡ 71d943e3-761a-4337-b412-b0b768483bc2
-protip(md"Interestingly, there's actually more work to do in the case of computing integrals of scalars, since the adaptive quadrature algorithm chooses how many points and and where to evaluate the integrand separately for each wavelength.  However, the added cost of memory allocations is much more expensive than the cost of the added calculations.
+protip(md"Interestingly, there's actually more work to do in the case of computing integrals of scalars, since the adaptive quadrature algorithm chooses how many points and where to evaluate the integrand separately for each wavelength.  However, the added cost of memory allocations is much more expensive than the cost of the added calculations.
 
 Another complicating factor, the answers aren't identical.  This is because the criteria used by `quadgk` for when to stop evaluating the integrand at more points changes depending on whether it's deciding when to stop for each wavelength separately or for the entire vector at once.
 
-In principle, we could further optimize the serial version to avoid unnecessary memory allocations.  QuadGK.jl provides a function `quadgk!` that writes the output into a preallocated space.  Even `quadgk!` needs some memory to compute intermediate values.  Normally,  `quadgk` or `quadgk!` will allocate a buffer for segments automatically.  However, you can instead allocate a buffer using `alloc_segbuf(...)` and pass the preallocated buffer as the `segbuf` argument.  When using multiple threads, we'd need to allocate a separate buffer for each thread and make sure that each thread uses only its own buffer.  However, it would take some time to figure out how to do that and to test the resulting code.  In practice, it's often a better use of our time make a pretty good serial code that can be parallelized well and to use of our time to parallelize that, rather than making most efficient serial code possible.")
+In principle, we could further optimize the serial version to avoid unnecessary memory allocations.  QuadGK.jl provides a function `quadgk!` that writes the output into a preallocated space.  Even `quadgk!` needs some memory to compute intermediate values.  Normally,  `quadgk` or `quadgk!` will allocate a buffer for segments automatically.  However, you can instead allocate a buffer using `alloc_segbuf(...)` and pass the preallocated buffer as the `segbuf` argument.  When using multiple threads, we'd need to allocate a separate buffer for each thread and make sure that each thread uses only its own buffer.  However, it would take some time to figure out how to do that and to test the resulting code.  In practice, it's often a better use of our time to make a pretty good serial code that can be parallelized well and to use our time to parallelize that, rather than making the most efficient serial code possible.")
 
 # ╔═╡ db1583f4-61cb-43e0-9326-d6c15d8fad5a
 md"""
@@ -337,7 +337,7 @@ As expected, the map versions perform very similarly in terms of wall-clock time
 protip(md"""
 It is possible to have each function return an array.  Then the output is an array of arrays.  In that case we could use `stack` to return a 2-d array. 
 
-However, if each function returns a NamedTuple (or a custom struct), then then the output of `map` is an array of NamedTuples (or an array of structs).  
+However, if each function returns a NamedTuple (or a custom struct), then the output of `map` is an array of NamedTuples (or an array of structs).  
 These can be converted into a `StructArray` using the [StructArrays.jl](https://juliaarrays.github.io/StructArrays.jl/stable/) package or a DataFrame using the [DataFrames.jl](https://dataframes.juliadata.org/latest/) package.  However, sometimes getting the outputs into a format we want to use for subsequent calculations (e.g., arrays for each output, rather than an array of structs) is often a bit of a hassle and more error prone than just writing our code in terms of either a `for` loop or a broadcasted function.""")
 
 # ╔═╡ e71cede9-382e-47e2-953a-2fa96ed50002
@@ -360,15 +360,15 @@ md"# Parallelization via multiple threads"
 
 # ╔═╡ 3717d201-0bc3-4e3c-8ecd-d835e58f6821
 md"""
-Julia has native support for using multiple **threads**.  This is useful when you have one computer with multiple processor cores.  Then each thread can execute on a separate processor core.  Because the threads are part of the same **process**, every thread has access to all the memory used by every other thread.  Programming with threads requires being careful to avoid undefined behavior because threads read and write to the same memory location in an unexpected order.  In general, multi-threaded programming can be intimidating, since arbitrary parallel code is hard to write, read, debug and maintain.  One way to keep things managable is to stick with some common programming patterns which are relatively easy to work with.  In this exercise, we'll explore using multi-threadding for a parallel for loop, parallel map, parallel reduce, and parallel mapreduce.
+Julia has native support for using multiple **threads**.  This is useful when you have one computer with multiple processor cores.  Then each thread can execute on a separate processor core.  Because the threads are part of the same **process**, every thread has access to all the memory used by every other thread.  Programming with threads requires being careful to avoid undefined behavior because threads read and write to the same memory location in an unexpected order.  In general, multi-threaded programming can be intimidating, since arbitrary parallel code is hard to write, read, debug and maintain.  One way to keep things manageable is to stick with some common programming patterns which are relatively easy to work with.  In this exercise, we'll explore using multi-threading for a parallel for loop, parallel map, parallel reduce, and parallel mapreduce.
 """
 
 # ╔═╡ 04bcafcd-1d2f-4ce5-893f-7ec5bb05f9ed
 md"""
-1b.  Given that this notebook is using $(Threads.nthreads()) threads, what is the theoretical maximum improvement in the performance of calculating the spectrum when using multi-threading relative to calculatingi the spectrum in serial?  """
+1b.  Given that this notebook is using $(Threads.nthreads()) threads, what is the theoretical maximum improvement in the performance of calculating the spectrum when using multi-threading relative to calculating the spectrum in serial?  """
 
 # ╔═╡ ca8ceb27-86ea-4b90-a1ae-86d794c9fc98
-response_1b = missing  # md"Insert your responce"
+response_1b = missing  # md"Insert your response"
 
 # ╔═╡ 8b61fca1-2f89-4c74-bca8-c6cc70ba62ad
 begin
@@ -394,7 +394,7 @@ Now, we'll time `calc_spectrum_threaded_for_loop` to compare to the serial versi
 
 # ╔═╡ 791041e9-d277-4cac-a5ac-1d6ec52e0287
 md"""
-While Threads.@threads can be useful for some simple tasks, there is active development of packages that provide additional high-level functions and macros to make multi-threaded programming easier.  For example, the [ThreadsX.jl](https://github.com/tkf/ThreadsX.jl) packageprovides a `foreach` function, the [OhMyThreads.jl](https://juliafolds2.github.io/OhMyThreads.jl/stable/) packages provides a `tforeach`, the [Polyester.jl](https://github.com/JuliaSIMD/Polyester.jl) package provides a `@batch` macro, and the FLoops package provides a `@floop` macro. I'll demonstrate each below.
+While Threads.@threads can be useful for some simple tasks, there is active development of packages that provide additional high-level functions and macros to make multi-threaded programming easier.  For example, the [ThreadsX.jl](https://github.com/tkf/ThreadsX.jl) package provides a `foreach` function, the [OhMyThreads.jl](https://juliafolds2.github.io/OhMyThreads.jl/stable/) package provides a `tforeach`, the [Polyester.jl](https://github.com/JuliaSIMD/Polyester.jl) package provides a `@batch` macro, and the FLoops package provides a `@floop` macro. I'll demonstrate each below.
 """
 
 # ╔═╡ f9b3f5ce-cfc1-4d59-b21e-2fd07075f036
@@ -408,11 +408,11 @@ Inevitably, one package/pattern for parallelizing your code will be a little mor
 	   
 [`ThreadsX.jl`](https://github.com/tkf/ThreadsX.jl) provides a drop-in replacement for several functions from Base.  The common interface makes it easy to swap in for serial code quickly.  
 
-[`OhMyThreads.jl`](https://juliafolds2.github.io/OhMyThreads.jl/stable/) provides very similar syntax with just slightly different names.  It's also being actively developed and improved.  One distinguishing features is that it aims to allow nested threaded operations to result in good performance.  If I had to recommend just one package for multi-threading this is what I'd currently  recommend.   
+[`OhMyThreads.jl`](https://juliafolds2.github.io/OhMyThreads.jl/stable/) provides very similar syntax with just slightly different names.  It's also being actively developed and improved.  One distinguishing feature is that it aims to allow nested threaded operations to result in good performance.  If I had to recommend just one package for multi-threading, this is what I'd currently  recommend.   
 
-In terms of raw performance, [`Polyester.jl`](https://github.com/JuliaSIMD/Polyester.jl) appears to be the fastest at the moment, particularly for loops that have little computation.  However, it can only uses a static schedule. Therefore, nested parallel loops don't work well with Polyester.
+In terms of raw performance, [`Polyester.jl`](https://github.com/JuliaSIMD/Polyester.jl) appears to be the fastest at the moment, particularly for loops that have little computation.  However, it can only use a static schedule. Therefore, nested parallel loops don't work well with Polyester.
 
-While [`FLoops.jl`](https://github.com/JuliaFolds/FLoops.jl) requires a somewhat different syntax, it can makes it easier to swap between multiple forms of parallelism.  Therefore, writing your code so it can be multi-threaded using FLoops is likely to make it very easy to parallelize your code for a distributed memory architecture.  FLoops can even make it easy to parallelize codes using a GPU.  
+While [`FLoops.jl`](https://github.com/JuliaFolds/FLoops.jl) requires a somewhat different syntax, it can make it easier to swap between multiple forms of parallelism.  Therefore, writing your code so it can be multi-threaded using FLoops is likely to make it very easy to parallelize your code for a distributed memory architecture.  FLoops can even make it easy to parallelize code using a GPU.  
 
 It's worth keeping these tradeoffs in mind when planning your project.  
 """)
@@ -422,7 +422,7 @@ md"""
 ## Parallel Map
 
 If you can write your computations in terms of calling **`map`**, then one easy way to parallelize your code is to replace the call to `map` with a call to a parallel map that makes use of multiple threads, such as `ThreadsX.map` or `OhMyThreads.tmap`.
-If your julia kernel has only a single thread, then it will still run in serial.  But if you have multiple theads, then `ThreadsX.map` or `OhMyThreads.tmap` will parallelize your code.
+If your julia kernel has only a single thread, then it will still run in serial.  But if you have multiple threads, then `ThreadsX.map` or `OhMyThreads.tmap` will parallelize your code.
 """
 
 # ╔═╡ 263e96b7-e659-468d-ba97-ca9832f6ea4d
@@ -457,7 +457,7 @@ md"""
 """
 
 # ╔═╡ a25c6705-54f4-4bad-966e-a8f13ae4c711
-response_1d = missing  # md"Insert your responce"
+response_1d = missing  # md"Insert your response"
 
 # ╔═╡ 739136b1-6b01-44c0-bbfd-dcb490d1e191
 begin
@@ -474,7 +474,7 @@ Depending on the computer being used, you might be a little disappointed in the 
 """
 
 # ╔═╡ bd185f74-d666-42b4-8da1-c768217f7782
-hint(md"""  In this case, we have a non-trivial, but still modest amount of work to do for each wavelength.  `map` distributed the work one element at a time.  The overhead in distributing the work and assembling the pieces likely ate into the potential performance gains.  To improve on this, we can tell `map` to distribute the work in batches.  Below, we'll specify an optional named parameter (e.g., `basesize` or `chucksize` depending on the library).  (Feel free to try chaning the size of batches to see how that affects the runtime.)""")
+hint(md"""  In this case, we have a non-trivial, but still modest amount of work to do for each wavelength.  `map` distributes the work one element at a time.  The overhead in distributing the work and assembling the pieces likely ate into the potential performance gains.  To improve on this, we can tell `map` to distribute the work in batches.  Below, we'll specify an optional named parameter (e.g., `basesize` or `chucksize` depending on the library).  (Feel free to try changing the size of batches to see how that affects the runtime.)""")
 
 # ╔═╡ 2c9cf709-9bc8-48bf-9e19-db8cf7c8690b
 md"""
@@ -489,11 +489,11 @@ batchsize_for_ThreadsXmap = 4
 
 # ╔═╡ 90c9d079-4bbc-4609-aa12-afa41a74b2fb
 md"""
-1e.  After specifying the size of each batch or chunk of work, did either the `OhMyThreads.tmap` and `ThreadsX.map` perform noticably better than when using a their default behavior?  How does the speed up using a batch or chunk size larger than 1 compare to the theoretical maximum speed-up factor?   
+1e.  After specifying the size of each batch or chunk of work, did either the `OhMyThreads.tmap` and `ThreadsX.map` perform noticeably better than when using their default behavior?  How does the speed up using a batch or chunk size larger than 1 compare to the theoretical maximum speed-up factor?   
 """
 
 # ╔═╡ 0edbb2db-4db8-4dc4-9a73-f7ff86e6f577
-response_1e = missing  # md"Insert your responce"
+response_1e = missing  # md"Insert your response"
 
 # ╔═╡ a944fdea-f41b-4a5f-95ac-e5f4074d4290
 begin
@@ -507,16 +507,16 @@ end
 # ╔═╡ eb57f7bb-1bff-471f-a599-d1d7d8f771ad
 md"""
 
-The results to the question above will depend on details like the type of CPU being used and number of CPU cores and threads in use.  Before starting large calculations, its good to test the effects of parameters like `basesize` or `chunksize` with the specific hardware and configuration parameters that you'll be using for your big runs.
+The results to the question above will depend on details like the type of CPU being used and the number of CPU cores and threads in use.  Before starting large calculations, it's good to test the effects of parameters like `basesize` or `chunksize` with the specific hardware and configuration parameters that you'll be using for your big runs.
 """
 
 # ╔═╡ d43525da-e0a2-4d2f-9dbb-bf187eebf6c1
 tip(md"""
 ## ''Embarassingly'' parallel is good
 
-So far, we've demonstrated parallelizing a computation that can be easily broken into smaller tasks that do not need to communicate with each other.  This is often called an called *embarassingly parallel* computation.  Don't let the name mislead you.  While it could be embarassingly if a Computer Science graduate student tried to make a Ph.D. thesis out of parallelizing an embarassingly parallel problem, that doesn't mean that programmers shouldn't take advantage of opportunities to use embarssingly parallel techniques when they can.  If you can parallelize your code using embarassingly parallel techniques, then you should almost always parallelize it that way, instead of (or at least before) trying to parallelize it at a finer grained level.
+So far, we've demonstrated parallelizing a computation that can be easily broken into smaller tasks that do not need to communicate with each other.  This is often called an called *embarassingly parallel* computation.  Don't let the name mislead you.  While it could be embarrassing if a Computer Science graduate student tried to make a Ph.D. thesis out of parallelizing an embarassingly parallel problem, that doesn't mean that programmers shouldn't take advantage of opportunities to use embarrassingly parallel techniques when they can.  If you can parallelize your code using embarassingly parallel techniques, then you should almost always parallelize it that way, instead of (or at least before) trying to parallelize it at a finer grained level.
 
-Next, we'll consider problems that do require some communications between tasks, but in a very structured manner.
+Next, we'll consider problems that do require some communication between tasks, but in a very structured manner.
 """)
 
 # ╔═╡ 547ad5ba-06ad-4707-a7ef-e444cf88ae53
@@ -524,7 +524,7 @@ md"""
 # Reductions
 Many common calculations can be formulated as a [**reduction operation**](https://en.wikipedia.org/wiki/Reduction_operator), where many inputs are transformed into one output.  Common examples would be `sum` or `maximum`.  One key property of reduction operations is that they are associative, meaning it's ok for the computer to change the order in which inputs are reduced.  (Thinking back to our lesson about floating point arithmetic, many operations aren't formally associative or commutative, but are still close enough that we're willing to let the computer reorder calculations.)
 
-When we have multiple processors, the input can be divided into subsets and each processor reduce each subset separately.  Then each processor only needs to communicate one value of the variable being reduced to another processor, even if the input is quite large.  For some problems, reductions also reduce the amount of memory allocations necessary.
+When we have multiple processors, the input can be divided into subsets and each processor reduces each subset separately.  Then each processor only needs to communicate one value of the variable being reduced to another processor, even if the input is quite large.  For some problems, reductions also reduce the amount of memory allocations necessary.
 """
 
 # ╔═╡ 7ba35a63-ac61-434b-b759-95d505f62d9e
@@ -573,11 +573,11 @@ end
 
 # ╔═╡ 161ea6af-5661-44e1-ae40-1b581b636c25
 md"""
-## Parallel loop with simulatenous reduction 
-Next, we'll use parallel loop macros to compute the mean sequared error using multiple threads.  
+## Parallel loop with simultaneous reduction 
+Next, we'll use parallel loop macros to compute the mean squared error using multiple threads.  
 When using [FLoops.jl](https://github.com/JuliaFolds/FLoops.jl), we need to use the `@floop` macro around the loop  *and* the `@reduce` macro to indicate which variables are part of the reduction.
 
-When using [OhMyThreads.jl](), we need to use the `@tasks` macro around the loop and the `@set reducer` instructions inside the loop.  We also use the `@local` macro to specify that some variables can be allocated a single time per thread rather than once per itteration.
+When using [OhMyThreads.jl](), we need to use the `@tasks` macro around the loop and the `@set reducer` instructions inside the loop.  We also use the `@local` macro to specify that some variables can be allocated a single time per thread rather than once per iteration.
 """
 
 # ╔═╡ 3183c6ac-5acd-4770-a638-c4c6ba3f7c4f
@@ -599,13 +599,13 @@ end
 
 # ╔═╡ bbdd495c-f2c6-4264-a4e9-5083753eb410
 md"""
-One advantage of parallelizing your code with [FLoops.jl](https://juliafolds.github.io/FLoops.jl/dev/) is that it then becomes very easy to compare the performance of a calculation in serial and in parallel using different **[executors](https://juliafolds.github.io/FLoops.jl/dev/tutorials/parallel/#tutorials-executor)** that specify how the calculation should be implemented.  There are different parallel executor for shared-memory parallelism (via multi-threading this exercise), distributed-memory parallelism and even for parallelizing code over a GPUs (although there are some restrictions on what code can be run on the GPU, that we'll see in a [Lab 8](https://github.com/PsuAstro528/lab8)).
+One advantage of parallelizing your code with [FLoops.jl](https://juliafolds.github.io/FLoops.jl/dev/) is that it then becomes very easy to compare the performance of a calculation in serial and in parallel using different **[executors](https://juliafolds.github.io/FLoops.jl/dev/tutorials/parallel/#tutorials-executor)** that specify how the calculation should be implemented.  There are different parallel executor for shared-memory parallelism (via multi-threading this exercise), distributed-memory parallelism, and even for parallelizing code over GPUs (although there are some restrictions on what code can be run on the GPU, that we'll see in a [Lab 8](https://github.com/PsuAstro528/lab8)).
 """
 
 # ╔═╡ 383aa611-e115-482e-873c-4487e53d457f
 md"# Mapreduce
 
-We can combine `map` and `reduce` into one function **`mapreduce`**.  There are opportunities for some increased efficiencies when merging the two, since the amount of communications between threads can be significantly decreased thanks to the reduction operator.  Mapreduce is a common, powerful and efficient programming pattern.  For example, we often want to evaluate a model for many input values, compare the results of the model to data and the compute some statistic about how much the model and data differ.
+We can combine `map` and `reduce` into one function **`mapreduce`**.  There are opportunities for some increased efficiencies when merging the two, since the amount of communications between threads can be significantly decreased thanks to the reduction operator.  Mapreduce is a common, powerful and efficient programming pattern.  For example, we often want to evaluate a model for many input values, compare the results of the model to data and compute some statistic about how much the model and data differ.
 
 In this exercise, we'll demonstrate using `mapreduce` for calculating the mean squared error between the model and the model Doppler shifted by a velocity, $v$.  First, we'll
 "
@@ -640,7 +640,7 @@ mapreduce_batchsize = 16
 # ╔═╡ 3f01d534-b01d-4ab4-b3cd-e809b02563a9
 md"""
 **Q1i:**  How did the performance of `calc_mse_mapreduce_threadsx` or `calc_mse_mapreduce_ohmythreads` compare to the performance of `calc_mse_loop`?  
-Were the speed-up facotrs larger than when performing parallel map-type operations?  
+Were the speed-up factors larger than when performing parallel map-type operations?  
 Why?  
 Can you explain why the batchsize had a bigger effect for the mapreduce calculations than for the map operations?
 """
@@ -712,7 +712,7 @@ begin
 end
 
 # ╔═╡ 4effbde2-2764-4c51-a9d0-a2db82f60862
-"Create an object that provides a model for the raw spetrum (i.e., before entering the telescope)"
+"Create an object that provides a model for the raw spectrum (i.e., before entering the telescope)"
 function make_spectrum_object(;lambda_min = 4500, lambda_max = 7500, flux_scale = 1.0,
         num_star_lines = 200, num_telluric_lines = 100, limit_line_effect = 10.0)
 
@@ -755,7 +755,7 @@ begin      # Create a model for the point spread function (PSF)
 end
 
 # ╔═╡ 0aafec61-ff44-49e2-95e9-d3506ac6afa7
-# Create a functor (function-like object) that computes a model for the the convolution of the raw spectrum with the PSF model
+# Create a functor (function-like object) that computes a model for the convolution of the raw spectrum with the PSF model
 conv_spectrum = ConvolvedSpectrum(raw_spectrum,psf_model)
 
 # ╔═╡ dbf05374-1d89-4f30-b4b4-6cf57631f8b7
@@ -1200,7 +1200,7 @@ end
 
 # ╔═╡ 8737797c-6563-4513-a5fc-fde9681b4c63
 Markdown.parse("""
-**Q1k:**  Before parallelizing your project code for shared memory, it may be good to get some practice parallelizing a simple function very similar to what's already been done above.  Try parallelizing the function `calc_χ²` by writing a function `calc_χ²_my_way` in the cell below.   You can parallel the calculation of calculating χ² using any one of the parallelization strategies demonstrated above.  I'd suggest trying to use the one that you plan to use for your project.  Feel free to refer to the serial function [`calc_χ²` at bottom of notebook]($linkto_calc_χ²_loop).
+**Q1k:**  Before parallelizing your project code for shared memory, it may be good to get some practice parallelizing a simple function very similar to what's already been done above.  Try parallelizing the function `calc_χ²` by writing a function `calc_χ²_my_way` in the cell below.   You can parallelize the calculation of χ² using any one of the parallelization strategies demonstrated above.  I'd suggest trying to use the one that you plan to use for your project.  Feel free to refer to the serial function [`calc_χ²` at the bottom of the notebook]($linkto_calc_χ²_loop).
 """)
 
 # ╔═╡ 3c5ee822-b938-4848-b2b0-f0de2e65b4db
