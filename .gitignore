@@ -1,0 +1,15 @@
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+data
+deps/deps.jl
+deps/build.log
+*.prof
+*.mem
+*.swp
+*.ipynb_checkpoints
+src/.ipynb_checkpoints
+ex*backup*.jl
+core*
+
+pluto_state_cache
